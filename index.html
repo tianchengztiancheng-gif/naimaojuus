@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gal 引擎</title>
+<link rel="stylesheet" href="app/style.css">
+<!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
+<link rel="stylesheet" href="app/phone-inner.css">
+<link rel="stylesheet" href="resource/juus/phone.css">
+<link rel="stylesheet" href="app/phone.css">
+<link rel="stylesheet" href="app/editor-theme.css">
+</head>
+<body>
+
+<div id="stage">
+  <div class="bglayer" id="bgA"></div>
+  <div class="bglayer" id="bgB"></div>
+  <div id="sprites"></div>
+
+  <!-- CG 层：文生图出的图铺在这里。压在立绘之上、对话框之下。
+       素材来源不是 CG 素材表，而是这一轮现生成的图（core/cg.js）。 -->
+  <div id="cg" hidden>
+    <div id="cg-blur"></div>
+    <img id="cg-img" alt="">
+    <div id="cg-cap" hidden></div>
+    <div id="cg-acts">
+      <button id="cg-redraw" title="重画这一张">♻</button>
+      <button id="cg-hide" title="收起（点舞台右上角 ▣ 可以叫回来）">×</button>
+    </div>
+  </div>
+
+  <!-- 出图进度。NAI 一张要十几秒，不能让玩家干等，所以先演剧情，图后到 -->
+  <div id="cg-busy" hidden><span class="dot"></span><span id="cg-busy-t">正在出图…</span>
+    <button id="cg-busy-x" title="取消这一轮的出图">停</button></div>
+
+  <div id="envbar" hidden></div>
+
+  <div id="dialogue" hidden>
+    <div id="dlg-body">
+      <div id="speaker">旁白</div>
+      <div id="text"></div>
+    </div>
+    <div id="choices" hidden></div>
+    <div id="hint">▼ 点击继续</div>
+    <div id="nav">
+      <button id="nav-first" title="回到开头">⏮</button>
+      <button id="nav-prev" title="上一句（←）">‹</button>
+      <span id="progress"></span>
+      <button id="nav-next" title="下一句（→）">›</button>
+      <button id="nav-last" title="跳到最新">⏭</button>
+    </div>
+  </div>
+
+  <div id="inputbar" hidden>
+    <textarea id="usertext" rows="1" placeholder="你的行动或台词…（Enter 发送，Shift+Enter 换行）"></textarea>
+    <button id="send">发送</button>
+  </div>
+
+  <div id="toolbar" hidden>
+    <button id="btn-cgmode" title="CG 常驻：让 CG 盖住立绘，一直铺着推剧情">▣</button>
+    <button id="btn-cg" title="CG / 相册">✿<i id="cg-dot" hidden></i></button>
+    <button id="btn-skin" title="换装（在场舰娘的皮肤）">◈</button>
+    <button id="btn-phone" title="打开手机（剧情、状态、存档、外观、调试都在里面）">▢<i id="phone-dot" hidden></i></button>
+  </div>
+
+  <div id="skin-panel" hidden>
+    <header>换 装<button class="x" id="skin-close">×</button></header>
+    <div id="skin-body"></div>
+  </div>
+
+  <div id="cg-panel" hidden>
+    <header>相 册<span id="cg-stat"></span><button class="x" id="cg-close">×</button></header>
+    <div id="cg-now"></div>
+    <div id="cg-body"></div>
+  </div>
+
+  <div id="tune" hidden>
+    <label>立绘大小 <span class="v" id="v-h">78%</span>
+      <input type="range" id="t-h" min="45" max="130" step="1" value="78"></label>
+    <label>垂直位置 <span class="v" id="v-y">0%</span>
+      <input type="range" id="t-y" min="-25" max="25" step="1" value="0"></label>
+    <hr>
+    <label class="chk2"><input type="checkbox" id="t-fx" checked> 立绘出场/换表情随机特效</label>
+    <label class="chk2"><input type="checkbox" id="t-auto" checked> 对话框按正文高度收缩</label>
+    <label>对话框模糊 <span class="v" id="v-bl">14px</span>
+      <input type="range" id="t-bl" min="0" max="24" step="1" value="14"></label>
+    <label>对话框位置 <span class="v" id="v-py">0%</span>
+      <input type="range" id="t-py" min="0" max="45" step="1" value="0"></label>
+    <label>对话框整体 <span class="v" id="v-o">100%</span>
+      <input type="range" id="t-o" min="20" max="100" step="1" value="100"></label>
+    <label>对话框底色 <span class="v" id="v-bg">52%</span>
+      <input type="range" id="t-bg" min="0" max="100" step="1" value="52"></label>
+    <label>对话框边框 <span class="v" id="v-bd">16%</span>
+      <input type="range" id="t-bd" min="0" max="100" step="1" value="16"></label>
+    <label>同台上限 <span class="v" id="v-ms">4</span>
+      <input type="range" id="t-ms" min="1" max="6" step="1" value="4"></label>
+    <hr>
+    <label>开局好感度 <span class="v" id="v-fav">80</span>
+      <input type="range" id="t-fav" min="0" max="200" step="10" value="80"></label>
+    <hr>
+    <label class="chk2"><input type="checkbox" id="t-keepall"> 动态/热点只累积（不替换旧的）</label>
+    <label>动态保留条数 <span class="v" id="v-lp">20</span>
+      <input type="range" id="t-lp" min="5" max="80" step="5" value="20"></label>
+    <label>热点保留条数 <span class="v" id="v-lt">20</span>
+      <input type="range" id="t-lt" min="5" max="80" step="5" value="20"></label>
+    <button id="t-reset">恢复默认</button>
+  </div>
+
+  <div id="spinner" hidden>
+    <span class="sp"></span>生成中<span class="el" id="elapsed"></span>
+    <button id="btn-abort">中断</button>
+  </div>
+</div>
+
+<!-- ===== 调试面板 ===== -->
+
+<!-- ===== 小手机 ===== -->
+<div id="phone-overlay" class="on" hidden>
+  <div class="ph-frame">
+    <div class="ph-rim"></div>
+    <div class="ph-screen" id="jup-root">
+      <div class="ph-island"></div>
+      <div class="ph-status"><span id="ph-time">9:41</span>
+        <span class="r">▮▮▮<b id="ph-batt"></b></span></div>
+      <div class="ph-layer ph-home on" data-app="home">
+        <div class="ph-clock"><div class="t" id="ph-bigtime">9:41</div>
+          <div class="d" id="ph-date"></div>
+          <div class="ph-widget" id="ph-widget"></div></div>
+        <div class="ph-grid" id="ph-grid"></div>
+      </div>
+    </div>
+    <button class="ph-homebar" id="ph-home-btn" title="回到主屏" aria-label="回到主屏">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+        stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/>
+        <path d="M9.8 20v-5.5h4.4V20"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ===== 全部剧情 ===== -->
+
+<!-- ===== 状态面板 ===== -->
+
+<!-- ===== 存读档 ===== -->
+
+<!-- ===== 开场引导 =====
+     版式借鉴：天青的标题画面（满幅背景 + 左侧竖排菜单）
+             开拓轶事的新游戏向导（步骤导轨 + STEP 编号 + 进度条）
+     配色是我们自己的碧蓝。背景全是 CSS 画的，不依赖任何图片，离线也好看。 -->
+<div id="boot" class="kt">
+  <div class="boot-bg" aria-hidden="true">
+    <span class="w w1"></span><span class="w w2"></span><span class="w w3"></span>
+    <span class="grid"></span>
+  </div>
+
+  <div class="boot-shell">
+    <!-- 用 div 不用 aside：style.css 里有一条裸元素选择器
+         aside{position:absolute;right:0;width:440px}（老侧栏留下的），
+         用 <aside> 会被它拽出网格贴到右边去。 -->
+    <div class="boot-rail">
+      <div class="boot-brand">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="34" height="34" fill="none"
+               stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+            <path d="M20 4 32 12v16L20 36 8 28V12z"/>
+            <path d="M20 12v16M13 16v8M27 16v8" stroke-width="1.2" opacity=".55"/>
+          </svg>
+        </div>
+        <div class="txt">
+          <h1>Gal 引擎</h1>
+          <p>独立运行的角色卡前端 · 不依赖酒馆</p>
+        </div>
+      </div>
+
+      <button type="button" class="boot-resume" id="btn-continue" hidden>
+        <b>继续上次</b><span id="resume-meta">读取自动存档</span>
+      </button>
+
+      <nav class="boot-steps" id="boot-steps">
+        <button type="button" data-step="asset">
+          <i class="dot"></i><b>素材</b><span>角色卡与预设</span></button>
+        <button type="button" data-step="api">
+          <i class="dot"></i><b>接口</b><span>地址、密钥与模型</span></button>
+        <button type="button" data-step="art">
+          <i class="dot"></i><b>插画</b><span>可选 · NovelAI 出图</span></button>
+        <button type="button" data-step="go">
+          <i class="dot"></i><b>开场</b><span>称呼与开局</span></button>
+      </nav>
+
+      <div class="boot-foot">
+        <span>gal 引擎 · v5.20</span>
+        <span class="dim">所有文件只存在你自己的浏览器里</span>
+      </div>
+    </div>
+
+    <section class="boot-main">
+      <header class="boot-head">
+        <div class="kicker"><span id="boot-kicker">STEP 01 / ASSET</span></div>
+        <h2 id="boot-title">素 材</h2>
+        <p id="boot-sub">载入角色卡和预设。两个文件都只存在本机浏览器，不会上传。</p>
+        <div class="boot-bar"><i id="boot-bar-fill"></i></div>
+      </header>
+
+      <div class="boot-body">
+        <!-- ① 素材 -->
+        <div class="boot-pane on" data-pane="asset">
+          <div class="files">
+            <label class="file">角色卡 JSON<input type="file" id="f-card" accept=".json" hidden></label>
+            <label class="file">预设 JSON<input type="file" id="f-preset" accept=".json" hidden></label>
+            <label class="file">附加世界书<input type="file" id="f-wi" accept=".json" hidden></label>
+          </div>
+          <div class="note" id="assets-note">尚未载入。文件只存在你本机的浏览器里。</div>
+          <p class="boot-tip">角色卡是内容来源（立绘表、场景表、世界书、开场白都从里面读）。
+            预设决定提示词怎么组装 —— 没有它模型多半不会按剧本格式输出。</p>
+        </div>
+
+        <!-- ② 接口 -->
+        <div class="boot-pane" data-pane="api">
+          <div class="grid2">
+            <label>协议
+              <select id="cfg-protocol">
+                <option value="openai">OpenAI 兼容</option>
+                <option value="claude">Anthropic</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </label>
+            <label>模型
+              <span style="display:flex;gap:6px">
+                <input type="text" id="cfg-model" list="model-list" placeholder="claude-sonnet-4-5" style="flex:1">
+                <button type="button" id="btn-models" style="white-space:nowrap;padding:8px 12px">拉取</button>
+              </span>
+              <datalist id="model-list"></datalist>
+            </label>
+          </div>
+          <label>API 地址 <input type="text" id="cfg-base" placeholder="https://api.anthropic.com"></label>
+          <label>密钥 <input type="password" id="cfg-key" placeholder="sk-..."></label>
+          <div class="grid3">
+            <label>温度 <input type="number" id="cfg-temp" step="0.05" min="0" max="2"></label>
+            <label title="这是硬上限。预设里常写 60000，直接照做容易在中转上半路断线。"
+              >最大输出(上限) <input type="number" id="cfg-max" step="256" min="256"></label>
+            <label class="chk"><input type="checkbox" id="cfg-stream" checked> 流式</label>
+          </div>
+          <div class="row">
+            <button id="btn-test">测试连接</button>
+            <span class="note" id="test-note"></span>
+          </div>
+          <p class="boot-tip">地址填根地址就行，<code>/v1</code> 这些会自动补。
+            401/403 是密钥问题，404 多半是地址少了或多了 <code>/v1</code>，
+            控制台报 CORS 说明这个端点不让浏览器直连，得走中转。</p>
+        </div>
+
+        <!-- ③ 插画（可选） -->
+        <div class="boot-pane" data-pane="art">
+          <div class="boot-art">
+            <div class="row" style="justify-content:space-between;align-items:center">
+              <div>
+                <b style="color:var(--main)">每轮自动出插画，铺成 CG</b>
+                <p class="dim" style="margin-top:4px">这一步可以跳过，之后在「设置 · 文生图」里随时开。</p>
+              </div>
+              <label class="boot-sw"><input type="checkbox" id="boot-ig-on"><span></span></label>
+            </div>
+            <label>NovelAI Token
+              <input type="password" id="boot-ig-key" placeholder="pst-…"></label>
+            <p class="note" id="boot-ig-note"></p>
+          </div>
+          <p class="boot-tip">要填<b>持久 token</b>，不是登录密码：NovelAI 网页 → 用户设置 →
+            Account → Get Persistent API Token。<br>
+            默认 1216×832 / 23 步，正好在 Opus 会员的免费档内（≤1,048,576 像素且 ≤28 步）。</p>
+        </div>
+
+        <!-- ④ 开场 -->
+        <div class="boot-pane" data-pane="go">
+          <label>你的称呼 <input type="text" id="cfg-user" placeholder="指挥官"></label>
+          <label>开场白 <select id="opening-sel"><option value="">（先载入角色卡）</option></select></label>
+          <div class="boot-ready" id="boot-ready"></div>
+          <div class="note" id="boot-note"></div>
+        </div>
+      </div>
+
+      <footer class="boot-nav">
+        <button type="button" id="boot-prev">‹ 上一步</button>
+        <span class="sp"></span>
+        <button type="button" id="boot-next">下一步 ›</button>
+        <button class="primary" id="btn-start" disabled>开 始 游 戏</button>
+      </footer>
+    </section>
+  </div>
+</div>
+
+<script src="resource/tianqing/expressions.js"></script>
+<script src="resource/tianqing/scenes.js"></script>
+<script src="resource/juus/expressions.js"></script>
+<script src="resource/juus/scenes.js"></script>
+<script src="resource/juus/defaults.js"></script>
+<script src="resource/juus/phone.js"></script>
+<script src="resource/aliases.js"></script>
+<script src="core/tokens.js"></script>
+<script src="core/vector.js"></script>
+<script src="core/imagegen.js"></script>
+<script src="core/snapshot.js"></script>
+<script src="core/gallery.js"></script>
+<script src="core/cg.js"></script>
+<script src="core/resolver.js"></script>
+<script src="core/worldbook.js"></script>
+<script src="core/prompt.js"></script>
+<script src="core/script.js"></script>
+<script src="core/phone.js"></script>
+<script src="core/engine.js"></script>
+<script src="core/api.js"></script>
+<script src="core/storage.js"></script>
+<script src="core/editors.js"></script>
+<script src="app/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>引擎检视台</title>
+<style>
+:root{--bg:#0e141b;--panel:#16202b;--line:rgba(120,200,230,.22);--ink:#e8f2f8;--sub:#88b0c4;--cy:#69dbf6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:13.5px/1.65 'PingFang SC','Microsoft YaHei',system-ui,sans-serif}
+header{position:sticky;top:0;z-index:9;background:rgba(14,20,27,.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);padding:13px 20px}
+h1{font-size:15px;color:var(--cy);font-weight:600}
+#load{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;align-items:center}
+label.file{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 14px;cursor:pointer;font-size:12.5px;color:var(--sub)}
+label.file:hover{border-color:rgba(105,219,246,.5);color:#fff}
+label.file.ok{border-color:rgba(126,227,184,.5);color:#7ee3b8}
+nav{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+nav button{background:var(--panel);color:var(--sub);border:1px solid var(--line);border-radius:7px;padding:6px 15px;cursor:pointer;font:inherit;font-size:12.5px}
+nav button.on{background:rgba(105,219,246,.18);color:#fff;border-color:rgba(105,219,246,.5)}
+main{padding:16px 20px 70px}
+.row{display:flex;gap:9px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+input[type=text],textarea{background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--ink);padding:8px 12px;font:inherit}
+input[type=text]{flex:1;min-width:230px}
+textarea{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+button.go{background:linear-gradient(135deg,#46b6cf,#2d93ad);color:#fff;border:0;border-radius:7px;padding:8px 20px;cursor:pointer;font:inherit}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:12px}
+.card h2{font-size:13px;color:var(--cy);margin-bottom:9px;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td,th{padding:4px 8px;border-bottom:1px solid rgba(120,200,230,.09);text-align:left;vertical-align:top}
+th{color:var(--sub);font-weight:500}
+td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--sub);white-space:nowrap}
+pre{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;
+  word-break:break-word;background:#0a1017;border:1px solid rgba(120,200,230,.13);
+  border-radius:6px;padding:10px;max-height:340px;overflow:auto;line-height:1.7}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:4px;margin-right:5px}
+.t-sys{background:rgba(105,219,246,.16);color:#9fe3f8}
+.t-user{background:rgba(240,203,98,.16);color:#f0cb62}
+.t-asst{background:rgba(126,227,184,.16);color:#7ee3b8}
+.ok{color:#7ee3b8}.warn{color:#f0cb62}.bad{color:#ff9a9a}.dim{color:var(--sub)}
+.hint{color:var(--sub);font-size:12px;margin-bottom:10px}
+.bar{height:5px;background:#0a1017;border-radius:3px;overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#46b6cf,#69dbf6)}
+</style>
+</head>
+<body>
+<header>
+  <h1>引擎检视台 · 不发请求，只看组装结果</h1>
+  <div id="load">
+    <label class="file">角色卡 JSON<input type="file" id="f-card" accept=".json" hidden></label>
+    <label class="file">预设 JSON<input type="file" id="f-preset" accept=".json" hidden></label>
+    <label class="file">附加世界书（可选）<input type="file" id="f-wi" accept=".json" hidden></label>
+    <span id="loadmsg" class="hint" style="margin:0"></span>
+  </div>
+  <nav>
+    <button data-v="dry" class="on">提示词干跑</button>
+    <button data-v="wb">世界书激活</button>
+    <button data-v="pipe">输出管线</button>
+  </nav>
+</header>
+<main><div id="view"></div></main>
+
+<script src="../resource/tianqing/expressions.js"></script>
+<script src="../resource/tianqing/scenes.js"></script>
+<script src="../resource/juus/expressions.js"></script>
+<script src="../resource/juus/scenes.js"></script>
+<script src="../core/resolver.js"></script>
+<script src="../core/worldbook.js"></script>
+<script src="../core/prompt.js"></script>
+<script src="../core/script.js"></script>
+<script src="../core/engine.js"></script>
+<script>
+var eng = new Engine(), mode = 'dry';
+var view = document.getElementById('view'), msg = document.getElementById('loadmsg');
+var state = { card:0, preset:0, wi:0 };
+
+function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+
+function readJSON(input, cb){
+  input.onchange = function(){
+    var f = input.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function(){
+      try { cb(JSON.parse(r.result), f.name); }
+      catch(e){ msg.innerHTML = '<span class="bad">解析失败：' + esc(e.message) + '</span>'; }
+    };
+    r.readAsText(f);
+  };
+}
+function mark(id){ document.getElementById(id).parentNode.classList.add('ok'); }
+function status(){
+  msg.innerHTML = '世界书 <b>' + state.card + '</b> 条' +
+    (state.wi ? ' (+' + state.wi + ')' : '') +
+    ' ｜ 预设 <b>' + state.preset + '</b> 块' +
+    (state.card ? '' : ' <span class="warn">— 先载入角色卡</span>');
+}
+readJSON(document.getElementById('f-card'), function(j){ state.card = eng.loadCard(j); mark('f-card'); status(); draw(); });
+readJSON(document.getElementById('f-preset'), function(j){ state.preset = eng.loadPreset(j); mark('f-preset'); status(); draw(); });
+readJSON(document.getElementById('f-wi'), function(j){ state.wi += eng.addWorldbook(j); mark('f-wi'); status(); draw(); });
+status();
+
+/* ---------- 提示词干跑 ---------- */
+function viewDry(){
+  view.innerHTML =
+    '<div class="hint">输入一句用户发言，看这一轮会向模型发出什么。预设正文原样透传，这里只统计长度与位置。</div>' +
+    '<div class="row"><input type="text" id="ut" placeholder="用户发言，例如：早上好" value="早上好">' +
+    '<button class="go" id="run">干跑</button></div><div id="out"></div>';
+  document.getElementById('run').onclick = runDry;
+  if (state.card) runDry();
+}
+function runDry(){
+  if (!state.card) { document.getElementById('out').innerHTML = '<div class="card warn">请先载入角色卡。</div>'; return; }
+  var d = eng.dryRun(document.getElementById('ut').value);
+  var max = Math.max.apply(null, d.report.blocks.map(function(b){return b.chars;}).concat([1]));
+  var rows = d.report.blocks.map(function(b){
+    return '<tr><td>' + esc(b.tag) + '<div class="bar"><i style="width:' +
+      (b.chars/max*100).toFixed(1) + '%"></i></div></td>' +
+      '<td class="n">' + b.chars + ' 字</td><td class="n dim">' + b.role + '</td></tr>';
+  }).join('');
+  var msgs = d.messages.map(function(m,i){
+    var cls = m.role==='user'?'t-user':m.role==='assistant'?'t-asst':'t-sys';
+    return '<span class="tag '+cls+'">'+m.role+'</span>' + esc(m.content.slice(0,900)) +
+           (m.content.length>900 ? '\n<span class="dim">…（还有 '+(m.content.length-900)+' 字）</span>' : '');
+  }).join('\n\n' + '─'.repeat(40) + '\n\n');
+  document.getElementById('out').innerHTML =
+    '<div class="card"><h2>请求规模</h2><table><tr><th>消息条数</th><td class="n">'+d.report.messageCount+'</td></tr>'+
+    '<tr><th>总字数</th><td class="n">'+d.report.totalChars.toLocaleString()+'</td></tr>'+
+    '<tr><th>粗估 token</th><td class="n '+(d.report.estTokens>60000?'bad':d.report.estTokens>25000?'warn':'ok')+'">'+
+      d.report.estTokens.toLocaleString()+'</td></tr>'+
+    '<tr><th>世界书激活</th><td class="n">'+d.worldbook.stats.activated+' / '+d.worldbook.stats.pool+
+      ' 条，递归 '+d.worldbook.stats.recursionSteps+' 轮'+(d.worldbook.stats.dropped?'，超预算砍掉 '+d.worldbook.stats.dropped+' 条':'')+'</td></tr></table></div>'+
+    '<div class="card"><h2>组装顺序</h2><table>'+rows+'</table></div>'+
+    '<div class="card"><h2>最终 messages</h2><pre>'+msgs+'</pre></div>';
+}
+
+/* ---------- 世界书激活 ---------- */
+function viewWB(){
+  view.innerHTML =
+    '<div class="hint">输入一段对话内容，看哪些条目被点亮。蓝灯恒定注入，绿灯靠关键词命中。</div>'+
+    '<div class="row"><input type="text" id="wt" placeholder="例如：长门跪坐在樱花树下" value="长门跪坐在樱花树下">'+
+    '<button class="go" id="run2">激活</button></div><div id="out2"></div>';
+  document.getElementById('run2').onclick = runWB;
+  if (state.card) runWB();
+}
+function runWB(){
+  if (!state.card) { document.getElementById('out2').innerHTML = '<div class="card warn">请先载入角色卡。</div>'; return; }
+  var r = Worldbook.activate(eng.pool, [{role:'user',content:document.getElementById('wt').value}], eng.cfg);
+  var rows = r.active.map(function(e){
+    var t = r.trace.filter(function(x){return x.uid===e.uid;})[0] || {};
+    return '<tr><td>'+(e.constant?'<span class="ok">蓝灯</span>':'<span class="warn">绿灯</span>')+'</td>'+
+      '<td>'+esc(e.comment||'(无注释)')+'</td>'+
+      '<td class="n dim">'+(t.step?'递归'+t.step:'直接')+'</td>'+
+      '<td class="n">'+String(e.content||'').length+' 字</td>'+
+      '<td class="n dim">pos'+e.position+'</td></tr>';
+  }).join('');
+  document.getElementById('out2').innerHTML =
+    '<div class="card"><h2>激活 '+r.stats.activated+' / '+r.stats.pool+' 条 · '+r.stats.chars.toLocaleString()+' 字</h2>'+
+    '<table><tr><th>类型</th><th>条目</th><th>轮次</th><th>长度</th><th>位置</th></tr>'+rows+'</table></div>';
+}
+
+/* ---------- 输出管线 ---------- */
+var SAMPLE = '<juus_cot>思维链，应被剥掉</juus_cot>\n<Gal>\n晨光切进房间。|贝尔法斯特|平静|\n「早安，指挥官。」|贝尔法斯特|微笑|\n「起床。」|谢菲尔德|不存在的表情|\n</Gal>\n<update>\n_.set(\'人物.贝尔法斯特.好感度\', 125)\n</update>';
+function viewPipe(){
+  view.innerHTML =
+    '<div class="hint">把模型的原始输出粘进来，看清洗、解析、查图的结果。不需要角色卡也能用。</div>'+
+    '<textarea id="raw">'+esc(SAMPLE)+'</textarea>'+
+    '<div class="row" style="margin-top:10px"><button class="go" id="run3">跑管线</button></div><div id="out3"></div>';
+  document.getElementById('run3').onclick = runPipe;
+  runPipe();
+}
+function runPipe(){
+  eng.vars = eng.vars && eng.vars.人物 ? eng.vars : {时间:{时段:'朝'},地点:'后宅卧室',
+    人物:{贝尔法斯特:{服装:'女仆装',在场:true},谢菲尔德:{服装:'女仆装',在场:true}}};
+  var r = eng.processOutput(document.getElementById('raw').value);
+  var mods = r.modules.map(function(m){
+    var sp = m.sprites.map(function(s){
+      var c = s.via==='exact'?'ok':s.via==='any'?'bad':'warn';
+      return '<span class="'+c+'">'+esc(s.who+'/'+s.outfit+'/'+s.expr)+' ['+s.via+']</span>';
+    }).join(' + ') || '<span class="dim">—</span>';
+    return '<tr><td>'+esc(m.who)+'</td><td>'+esc(m.text.slice(0,44))+'</td><td>'+sp+'</td></tr>';
+  }).join('');
+  var warn = r.misses.map(function(x){
+    var c = x.via==='miss'||x.via==='hash'||x.via==='any'?'bad':'warn';
+    return '<tr><td class="'+c+'">'+x.via+'</td><td>'+esc(x.kind==='sprite'?x.who+' / '+x.expr:x.loc)+
+      '</td><td class="n dim">×'+x.count+'</td></tr>';
+  }).join('') || '<tr><td class="ok" colspan="3">全部精确命中</td></tr>';
+  document.getElementById('out3').innerHTML =
+    '<div class="card"><h2>处理结果</h2><table>'+
+    '<tr><th>清理器触发</th><td>'+(r.cleaners.join(' / ')||'<span class="dim">无</span>')+'</td></tr>'+
+    '<tr><th>剧本字段顺序</th><td>'+r.order+'</td></tr>'+
+    '<tr><th>变量更新</th><td>'+(r.updates.map(esc).join('<br>')||'<span class="dim">无</span>')+'</td></tr></table></div>'+
+    '<div class="card"><h2>逐句渲染数据</h2><table><tr><th>说话人</th><th>台词</th><th>台上立绘</th></tr>'+mods+'</table></div>'+
+    '<div class="card"><h2>兜底告警</h2><table><tr><th>级别</th><th>对象</th><th>次数</th></tr>'+warn+'</table></div>';
+}
+
+function draw(){ ({dry:viewDry, wb:viewWB, pipe:viewPipe})[mode](); }
+document.querySelectorAll('nav button').forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll('nav button').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); mode = b.dataset.v; draw();
+  };
+});
+draw();
+</script>
+</body>
+</html>

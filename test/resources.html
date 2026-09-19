@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>资源层验证台</title>
+<style>
+:root{--bg:#0e141b;--panel:#16202b;--line:rgba(120,200,230,.22);--ink:#e8f2f8;--sub:#88b0c4;--cy:#69dbf6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 'PingFang SC','Microsoft YaHei',system-ui,sans-serif}
+header{position:sticky;top:0;z-index:10;background:rgba(14,20,27,.94);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);padding:14px 20px}
+h1{font-size:16px;font-weight:600;color:var(--cy)}
+#stats{color:var(--sub);font-size:12.5px;margin-top:4px;font-variant-numeric:tabular-nums}
+nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+nav button{background:var(--panel);color:var(--sub);border:1px solid var(--line);border-radius:7px;
+  padding:6px 15px;cursor:pointer;font:inherit;font-size:13px}
+nav button.on{background:rgba(105,219,246,.18);color:#fff;border-color:rgba(105,219,246,.5)}
+main{padding:18px 20px 60px}
+#search{width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);
+  border-radius:7px;color:var(--ink);padding:8px 13px;font:inherit;margin-bottom:16px}
+.char{margin-bottom:26px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
+.char>h2{font-size:14px;padding:10px 14px;background:rgba(105,219,246,.08);
+  border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.char>h2 span{color:var(--sub);font-weight:400;font-size:12px}
+.outfit{padding:10px 14px;border-bottom:1px solid rgba(120,200,230,.09)}
+.outfit:last-child{border-bottom:0}
+.outfit>h3{font-size:12.5px;color:var(--cy);margin-bottom:9px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:9px}
+.cell{text-align:center}
+.cell .box{aspect-ratio:3/4;background:#0a1017;border:1px solid rgba(120,200,230,.14);
+  border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+.cell img{max-width:100%;max-height:100%;object-fit:contain}
+.cell .box.err{border-color:rgba(255,110,110,.55);background:rgba(255,80,80,.09)}
+.cell .box.err::after{content:'✕';color:#ff8a8a;font-size:20px;position:absolute}
+.cell b{display:block;font-size:11px;font-weight:400;color:var(--sub);margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .n{position:absolute;top:3px;right:4px;font-size:10px;color:var(--cy);
+  background:rgba(10,16,23,.8);border-radius:3px;padding:0 4px}
+.scenegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:11px}
+.scenegrid .box{aspect-ratio:16/9}
+.scenegrid img{width:100%;height:100%;object-fit:cover}
+#log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;line-height:1.75}
+.ok{color:#7ee3b8}.bad{color:#ff9a9a}.warn{color:#f0cb62}
+</style>
+</head>
+<body>
+<header>
+  <h1>资源层验证台</h1>
+  <div id="stats">加载中…</div>
+  <nav>
+    <button data-v="chars" class="on">立绘</button>
+    <button data-v="scenes">背景</button>
+    <button data-v="test">查找测试</button>
+  </nav>
+</header>
+<main>
+  <input id="search" placeholder="筛选角色或地点…" hidden>
+  <div id="view"></div>
+</main>
+
+<script src="../resource/tianqing/expressions.js"></script>
+<script src="../resource/tianqing/scenes.js"></script>
+<script src="../resource/juus/expressions.js"></script>
+<script src="../resource/juus/scenes.js"></script>
+<script src="../core/resolver.js"></script>
+<script>
+var S = Resolver.stats();
+document.getElementById('stats').textContent =
+  S.characters + ' 角色 · ' + S.outfits + ' 套服装 · ' + S.expressions +
+  ' 个表情 · ' + S.sprites + ' 张立绘 ｜ ' + S.locations + ' 地点 · ' + S.backgrounds + ' 张背景';
+
+var view = document.getElementById('view'), search = document.getElementById('search'), mode = 'chars';
+
+function imgCell(url, label, count){
+  var c = document.createElement('div'); c.className = 'cell';
+  var b = document.createElement('div'); b.className = 'box';
+  var i = new Image();
+  i.loading = 'lazy'; i.src = url; i.alt = label;
+  i.onerror = function(){ b.classList.add('err'); i.remove(); };
+  b.appendChild(i);
+  if (count > 1){ var n = document.createElement('div'); n.className='n'; n.textContent='×'+count; b.appendChild(n); }
+  var t = document.createElement('b'); t.textContent = label; t.title = label;
+  c.append(b, t);
+  return c;
+}
+
+function renderChars(filter){
+  view.innerHTML = '';
+  var names = Object.keys(RESOURCE.characters).filter(function(n){
+    return !filter || n.indexOf(filter) !== -1;
+  });
+  names.forEach(function(name){
+    var ch = RESOURCE.characters[name], wrap = document.createElement('div');
+    wrap.className = 'char';
+    var nOut = Object.keys(ch.outfits).length, nImg = 0, nExp = 0;
+    for (var o in ch.outfits){ for (var e in ch.outfits[o]){ nExp++; nImg += ch.outfits[o][e].length; } }
+    wrap.innerHTML = '<h2>' + name + '<span>' + nOut + ' 套 / ' + nExp + ' 表情 / ' + nImg + ' 图</span></h2>';
+    for (var of_ in ch.outfits){
+      var sec = document.createElement('div'); sec.className = 'outfit';
+      sec.innerHTML = '<h3>' + of_ + (of_ === ch.default_outfit ? ' · 默认' : '') + '</h3>';
+      var g = document.createElement('div'); g.className = 'grid';
+      var t = ch.outfits[of_];
+      for (var ex in t) g.appendChild(imgCell(t[ex][0], ex, t[ex].length));
+      sec.appendChild(g); wrap.appendChild(sec);
+    }
+    view.appendChild(wrap);
+  });
+}
+
+function renderScenes(filter){
+  view.innerHTML = '';
+  var g = document.createElement('div'); g.className = 'grid scenegrid';
+  Object.keys(RESOURCE.scenes).forEach(function(loc){
+    if (filter && loc.indexOf(filter) === -1) return;
+    var t = RESOURCE.scenes[loc];
+    for (var p in t) g.appendChild(imgCell(t[p], loc + '·' + p, 1));
+  });
+  view.appendChild(g);
+}
+
+function renderTest(){
+  var cases = [
+    ['天青','微笑',{},'常服精确'],
+    ['天青','wink',{outfit:'演出服'},'指定服装'],
+    ['天青','演出服wink',{},'老式拼接名（向下兼容）'],
+    ['天青','婚纱开心',{},'老式拼接名'],
+    ['天青','不存在的表情',{},'兜底不报错'],
+    ['圣路易斯','微笑',{outfit:'旗袍'},'多服装角色'],
+    ['圣路易斯','微笑',{outfit:'泳装'},'换一套衣服'],
+    ['贝尔法斯特','端茶',{},'剧本写了但没图'],
+    ['查无此人','微笑',{},'未知角色应返回 null']
+  ];
+  var out = '── 立绘查找 ──\n';
+  cases.forEach(function(c){
+    var r = Resolver.sprite(c[0], c[1], c[2]);
+    var lbl = (c[0] + '/' + c[1] + (c[2].outfit ? ' @' + c[2].outfit : ''));
+    while (lbl.length < 26) lbl += ' ';
+    var cls = !r ? 'bad' : r.via === 'exact' ? 'ok' : 'warn';
+    out += lbl + '<span class="' + cls + '">' +
+      (r ? '→ ' + r.outfit + '/' + r.expr + '  [' + r.via + ']' : '→ null') + '</span>\n';
+  });
+  out += '\n── 背景查找 ──\n';
+  [['城郊花田','白日'],['城郊花田','夜晚'],['卧室','朝'],
+   ['后宅卧室','朝'],['重樱学院','午'],['某个不存在的地方','夜']].forEach(function(c){
+    var r = Resolver.scene(c[0], c[1]);
+    var lbl = c[0] + '·' + c[1];
+    while (lbl.length < 26) lbl += ' ';
+    var cls = !r ? 'bad' : r.via === 'exact' ? 'ok' : r.via === 'hash' ? 'bad' : 'warn';
+    out += lbl + '<span class="' + cls + '">' +
+      (r ? '→ ' + r.loc + '·' + r.period + '  [' + r.via + ']' : '→ null') + '</span>\n';
+  });
+  out += '\n绿=精确  黄=走了兜底但合理  红=兜底到了不相干的东西（需要补别名表）';
+  view.innerHTML = '<div id="log">' + out + '</div>';
+}
+
+function draw(){
+  search.hidden = (mode === 'test');
+  var f = search.value.trim();
+  if (mode === 'chars') renderChars(f);
+  else if (mode === 'scenes') renderScenes(f);
+  else renderTest();
+}
+document.querySelectorAll('nav button').forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll('nav button').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on'); mode = b.dataset.v; draw();
+  };
+});
+search.oninput = draw;
+draw();
+</script>
+</body>
+</html>

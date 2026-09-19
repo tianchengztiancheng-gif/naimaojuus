@@ -1,0 +1,26 @@
+node_modules/
+package-lock.json
+
+# ── 角色卡 / 预设 / 世界书：都是别人的作品，不进仓库 ──
+*.card.json
+card.json
+preset*.json
+worldbook*.json
+角色卡*.json
+预设*.json
+世界书*.json
+
+# ── 从角色卡生成的素材表（见 resource/README.md）──
+resource/juus/
+resource/tianqing/
+docs/立绘清单.md
+
+# ── 本地产物 ──
+*.zip
+# 例外：183 字节的 zip 测试夹具，test-imagegen 要用（gitignore 不支持行尾注释，别合并这两行）
+!tools/unit/nai.zip
+*.log
+.DS_Store
+Thumbs.db
+/tmp/
+shots/

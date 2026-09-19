@@ -1,0 +1,354 @@
+/* ============================================================
+ * app/editor-theme.css —— 「设置」工作台
+ *
+ * 结构借鉴 LingYuYue1/KaiTuoYiShi 的设置面板：
+ *   左侧分区导航 · 中间列表 · 右侧编辑器
+ * 配色改成碧蓝。不用 clip-path 切角 —— 小卡片上会啃出豁口。
+ * ============================================================ */
+#boot.kt{padding:0!important;display:block}
+/* 注意选择器权重：.ph-layer.app 是两个类，单写 .kt 会被它的浅色渐变压过去，
+   整块就会半透明地糊在壁纸上。这里必须至少同权重。 */
+.ph-layer.kt,#boot.kt,.kt{
+  --bg:9,16,24;          --bg2:15,25,36;        --bg3:20,33,46;
+  --txt:226,240,248;     --txt2:146,176,196;    --txt3:104,136,158;
+  --acc:96,205,240;      --acc2:56,160,205;
+  --ok:120,222,180;      --warn:240,200,110;    --danger:236,120,120;
+  --on-acc:6,20,30;
+  --serif:'Noto Serif SC','Source Han Serif SC',SimSun,serif;
+  color:rgb(var(--txt));
+  /* 必须不透明 —— 之前这层是半透明的，壁纸透上来，整块糊成灰的 */
+  background-color:rgb(var(--bg));
+  background-image:
+    radial-gradient(circle at 8% -5%,rgba(var(--acc),.12),transparent 44%),
+    linear-gradient(170deg,rgba(var(--bg2),1),rgba(var(--bg),1));
+  padding:0!important;
+  font-size:14.5px;
+}
+
+/* ---------- 三栏骨架 ---------- */
+.kt-shell{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(0,1fr)}
+.kt-nav{display:flex;flex-direction:column;padding:18px 12px 14px;gap:4px;
+  background:rgba(var(--bg),.75);
+  border-right:1px solid rgba(var(--acc),.18);overflow-y:auto}
+.kt-brand{font-family:var(--serif);letter-spacing:.3em;font-size:18px;font-weight:600;
+  color:rgb(var(--acc));padding:6px 12px 18px;display:flex;align-items:center;gap:10px}
+.kt-brand::before{content:'◆';font-size:11px}
+.kt-nav button{display:block;width:100%;text-align:left;background:none;border:0;
+  border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;position:relative;
+  transition:background .18s,color .18s;line-height:1.35}
+.kt-nav button b{display:block;font-family:var(--serif);letter-spacing:.14em;
+  font-size:15px;font-weight:600;color:rgba(var(--txt),.92)}
+.kt-nav button span{display:block;font-size:12px;color:rgba(var(--txt3),1);margin-top:4px}
+.kt-nav button:hover{background:rgba(var(--acc),.07)}
+.kt-nav button.on{background:linear-gradient(90deg,rgba(var(--acc),.16),rgba(var(--acc),.03))}
+.kt-nav button.on b{color:rgb(var(--acc))}
+.kt-nav button.on::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;
+  background:rgb(var(--acc));border-radius:2px}
+.kt-ver{margin-top:auto;padding:12px;font-size:10.5px;color:rgba(var(--txt3),.7);
+  letter-spacing:.1em}
+
+.kt-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.kt-head{flex:none;padding:18px 26px 15px;border-bottom:1px solid rgba(var(--acc),.16);
+  display:flex;align-items:flex-end;gap:16px;background:rgba(var(--bg),.45)}
+.kt-head h2{font-family:var(--serif);letter-spacing:.24em;font-size:20px;font-weight:600;
+  color:rgb(var(--txt));margin:0;white-space:nowrap}
+.kt-head p{font-size:13px;color:rgba(var(--txt3),1);margin:0 auto 3px 0}
+.kt-acts{display:flex;gap:8px;flex:none}
+.kt-content{flex:1;min-height:0;overflow:hidden;display:flex}
+
+/* ---------- 列表 + 编辑器 双栏 ---------- */
+.kt-split{flex:1;min-width:0;display:grid;grid-template-columns:380px minmax(0,1fr)}
+.kt-pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.kt-pane + .kt-pane{border-left:1px solid rgba(var(--acc),.14)}
+.kt-pane-hd{flex:none;padding:13px 18px 10px;font-size:12.5px;letter-spacing:.14em;
+  color:rgba(var(--txt3),1);display:flex;align-items:center;gap:9px;
+  border-bottom:1px solid rgba(var(--acc),.1)}
+.kt-pane-hd b{color:rgba(var(--acc),.9);font-weight:600}
+.kt-pane-bd{flex:1;min-height:0;overflow-y:auto;padding:0 12px 16px}
+.kt-pane-bd.pad{padding:16px 22px 26px}
+
+/* ---------- 列表项 ---------- */
+.kt-item{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:10px;
+  cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:background .16s}
+.kt-item:hover{background:rgba(var(--acc),.07)}
+.kt-item.on{background:rgba(var(--acc),.14);border-color:rgba(var(--acc),.4)}
+.kt-i-main{flex:1;min-width:0}
+.kt-i-t{font-size:14.5px;color:rgba(var(--txt),.95);font-weight:500;
+  display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kt-item.on .kt-i-t{color:rgb(var(--acc))}
+.kt-i-s{font-size:12px;color:rgba(var(--txt3),1);margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kt-item.off .kt-i-t,.kt-item.off .kt-i-s{opacity:.42}
+.kt-move{display:flex;flex-direction:column;gap:1px;flex:none}
+.kt-move button{background:none;border:0;color:rgba(var(--acc),.55);cursor:pointer;
+  font-size:10px;line-height:1;padding:1px 3px}
+.kt-move button:hover{color:rgb(var(--acc))}
+
+/* ---------- 分组 ---------- */
+.kt-group{margin-bottom:6px}
+.kt-ghead{display:flex;align-items:center;gap:9px;cursor:pointer;padding:12px 10px 8px;
+  font-size:12.5px;letter-spacing:.18em;color:rgba(var(--acc),.9);user-select:none;font-weight:600}
+.kt-ghead .arw{font-size:9px;transition:transform .18s}
+.kt-group.open .kt-ghead .arw{transform:rotate(90deg)}
+.kt-ghead .cnt{margin-left:auto;letter-spacing:0;color:rgba(var(--txt3),.9);font-size:11px}
+.kt-gbody{display:none}
+.kt-group.open .kt-gbody{display:block}
+
+/* ---------- 标签 ---------- */
+.kt .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;
+  font-style:normal;font-weight:600;letter-spacing:.04em;flex:none}
+.kt .tag.blue{background:rgba(var(--acc),.16);color:rgb(var(--acc))}
+.kt .tag.green{background:rgba(var(--ok),.16);color:rgb(var(--ok))}
+.kt .tag.mine{background:rgba(var(--warn),.16);color:rgb(var(--warn))}
+.kt .tag.mark{background:rgba(180,150,240,.18);color:rgb(196,172,248)}
+.kt .tag.role{background:rgba(var(--txt3),.16);color:rgba(var(--txt2),.95)}
+
+/* ---------- 开关 ---------- */
+.kt-sw{position:relative;width:36px;height:20px;flex:none;display:block}
+.kt-sw input{appearance:none;-webkit-appearance:none;position:absolute;inset:0;margin:0;
+  width:100%;height:100%;border-radius:999px;cursor:pointer;
+  background:rgba(var(--txt3),.28);transition:background .2s}
+.kt-sw input::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:rgba(var(--txt),.7);transition:transform .2s,background .2s}
+.kt-sw input:checked{background:rgba(var(--acc),.75)}
+.kt-sw input:checked::after{transform:translateX(16px);background:#fff}
+
+/* ---------- 表单 ---------- */
+.kt-field{margin-bottom:16px}
+.kt-field > label,.kt-label{display:block;font-size:13.5px;font-weight:600;
+  color:rgba(var(--txt2),1);margin-bottom:7px;letter-spacing:.06em}
+.kt-hint{font-size:12.5px;color:rgba(var(--txt3),1);margin-top:6px;line-height:1.7}
+.kt input[type=text],.kt input[type=number],.kt input[type=password],
+.kt select,.kt textarea{
+  display:block;width:100%;background:rgba(var(--bg),.7);color:rgb(var(--txt));
+  border:1px solid rgba(var(--acc),.2);border-radius:8px;
+  padding:10px 13px;font:inherit;font-size:14px;line-height:1.6;
+  transition:border-color .18s,box-shadow .18s,background .18s}
+.kt textarea{resize:vertical;min-height:90px;line-height:1.8}
+.kt input::placeholder,.kt textarea::placeholder{color:rgba(var(--txt3),.6)}
+.kt input:focus,.kt select:focus,.kt textarea:focus{outline:none;
+  border-color:rgba(var(--acc),.7);background:rgba(var(--bg3),.8);
+  box-shadow:0 0 0 3px rgba(var(--acc),.12)}
+.kt select{color-scheme:dark;appearance:none;-webkit-appearance:none;padding-right:30px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='rgba(146,176,196,0.8)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center}
+.kt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kt-row{display:flex;align-items:center;gap:12px;padding:9px 0;
+  border-bottom:1px solid rgba(var(--acc),.08)}
+.kt-row:last-child{border-bottom:0}
+.kt-row .kt-label{margin:0;flex:1}
+.kt-row .kt-hint{margin-top:2px}
+
+/* ---------- 分区标题 ---------- */
+.kt-sec{margin-bottom:24px;max-width:780px}
+.kt-sec > h4{font-family:var(--serif);letter-spacing:.22em;font-size:14px;
+  color:rgba(var(--acc),.92);margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.kt-sec > h4::after{content:'';flex:1;height:1px;
+  background:linear-gradient(90deg,rgba(var(--acc),.3),transparent)}
+
+/* ---------- 按钮 ---------- */
+.kt-btn{background:rgba(var(--acc),.12);color:rgb(var(--acc));
+  border:1px solid rgba(var(--acc),.42);border-radius:9px;
+  padding:8px 16px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;
+  letter-spacing:.06em;transition:background .18s,border-color .18s,transform .14s}
+.kt-btn:hover{background:rgba(var(--acc),.2);border-color:rgba(var(--acc),.7);
+  transform:translateY(-1px)}
+.kt-btn-primary{background:linear-gradient(135deg,rgb(var(--acc)),rgb(var(--acc2)));
+  color:rgb(var(--on-acc));border-color:transparent;font-weight:700}
+.kt-btn-primary:hover{box-shadow:0 4px 18px rgba(var(--acc),.32)}
+.kt-btn-danger{background:rgba(var(--danger),.1);color:rgb(var(--danger));
+  border-color:rgba(var(--danger),.38)}
+.kt-btn-danger:hover{background:rgba(var(--danger),.2);border-color:rgba(var(--danger),.7)}
+.kt-btn-wide{width:100%;padding:11px;font-size:13px;margin-top:6px}
+
+/* ---------- 统计条 ---------- */
+.kt-stat{background:rgba(var(--acc),.08);border:1px solid rgba(var(--acc),.2);
+  border-radius:10px;padding:11px 16px;font-size:13px;color:rgba(var(--txt2),1);
+  margin:0 0 12px;line-height:1.8}
+.kt-stat b{color:rgb(var(--acc));font-weight:600}
+
+/* ---------- 空态 ---------- */
+.kt-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;gap:8px;color:rgba(var(--txt3),.85);font-size:12.5px;text-align:center;padding:30px}
+.kt-empty .ic{font-size:30px;opacity:.5}
+
+/* ---------- 表格 / 代码 ---------- */
+.kt table{width:100%;border-collapse:collapse;font-size:13px}
+.kt th,.kt td{padding:8px 11px;border-bottom:1px solid rgba(var(--acc),.1);
+  text-align:left;vertical-align:top}
+.kt th{color:rgba(var(--txt3),.95);font-weight:500}
+.kt pre{background:rgba(var(--bg),.8);border:1px solid rgba(var(--acc),.16);
+  border-radius:8px;padding:11px;font-size:11.5px;line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;color:rgba(var(--txt2),.95);
+  font-family:ui-monospace,Menlo,Consolas,monospace;max-height:340px;overflow:auto}
+.kt .ok{color:rgb(var(--ok))}
+.kt .warn{color:rgb(var(--warn))}
+.kt .bad{color:rgb(var(--danger))}
+.kt .dim{color:rgba(var(--txt3),.9)}
+.kt h3{font-size:13px;color:rgba(var(--acc),.9);margin:0 0 8px;letter-spacing:.1em}
+
+/* 滚动条 */
+.kt ::-webkit-scrollbar{width:7px;height:7px}
+.kt ::-webkit-scrollbar-thumb{background:rgba(var(--acc),.32);border-radius:4px}
+.kt ::-webkit-scrollbar-track{background:transparent}
+
+/* 窄屏：导航收成顶部横条，双栏拆成单栏 */
+@media (max-width:1100px){
+  .kt-shell{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  .kt-nav{flex-direction:row;overflow-x:auto;border-right:0;
+    border-bottom:1px solid rgba(var(--acc),.16);padding:8px;gap:4px}
+  .kt-brand,.kt-ver{display:none}
+  .kt-nav button{width:auto;flex:none;padding:7px 13px;border-radius:8px}
+  .kt-nav button span{display:none}
+  .kt-nav button.on::before{display:none}
+  .kt-split{grid-template-columns:1fr}
+  .kt-split > .kt-pane:nth-child(2){display:none}
+  .kt-split.show-edit > .kt-pane:nth-child(1){display:none}
+  .kt-split.show-edit > .kt-pane:nth-child(2){display:flex;border-left:0}
+}
+
+/* 强调色之外的点缀：不同分区的头部给一点色相变化，不至于一片蓝 */
+.kt-nav button[data-sec="book"].on{background:linear-gradient(90deg,rgba(120,222,180,.18),transparent)}
+.kt-nav button[data-sec="book"].on b{color:rgb(var(--ok))}
+.kt-nav button[data-sec="book"].on::before{background:rgb(var(--ok))}
+.kt-nav button[data-sec="pre"].on{background:linear-gradient(90deg,rgba(196,172,248,.18),transparent)}
+.kt-nav button[data-sec="pre"].on b{color:rgb(196,172,248)}
+.kt-nav button[data-sec="pre"].on::before{background:rgb(196,172,248)}
+.kt-nav button[data-sec="debug"].on{background:linear-gradient(90deg,rgba(240,200,110,.18),transparent)}
+.kt-nav button[data-sec="debug"].on b{color:rgb(var(--warn))}
+.kt-nav button[data-sec="debug"].on::before{background:rgb(var(--warn))}
+.kt-nav button[data-sec="save"].on{background:linear-gradient(90deg,rgba(236,120,120,.16),transparent)}
+.kt-nav button[data-sec="save"].on b{color:rgb(var(--danger))}
+.kt-nav button[data-sec="save"].on::before{background:rgb(var(--danger))}
+
+/* ============================================================
+ * 借鉴 KaiTuoYiShi 的三组版式语汇：
+ *   ① 统计磁贴（中文标签 + 英文码 + 大数字，可点选）
+ *   ② 方形图标框标题（图标 + 主标题 + 副标题）
+ *   ③ 左侧色条信息卡 + 两列网格
+ * ============================================================ */
+
+/* ① 统计磁贴 */
+.kt-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:10px;margin-bottom:16px}
+.kt-tile{position:relative;text-align:left;cursor:pointer;padding:11px 14px;
+  border:1px solid rgba(var(--acc),.2);border-radius:10px;
+  background:linear-gradient(135deg,rgba(var(--acc),.08),rgba(var(--bg),.5));
+  color:rgba(var(--txt),.9);font:inherit;
+  transition:border-color .18s,background .18s,transform .16s}
+.kt-tile:hover{border-color:rgba(var(--acc),.55);transform:translateY(-1px)}
+.kt-tile.on{border-color:rgba(var(--acc),.85);
+  background:linear-gradient(135deg,rgba(var(--acc),.22),rgba(var(--acc),.05));
+  box-shadow:0 0 18px rgba(var(--acc),.14)}
+.kt-tile .lb{font-family:var(--serif);font-size:13px;letter-spacing:.16em;font-weight:600}
+.kt-tile .cd{font-size:10px;letter-spacing:.24em;color:rgba(var(--txt3),.9);margin-top:2px}
+.kt-tile .nm{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:rgb(var(--acc));line-height:1}
+.kt-tile.c-ok{--acc:120,222,180}
+.kt-tile.c-warn{--acc:240,200,110}
+.kt-tile.c-purple{--acc:196,172,248}
+
+/* ② 方形图标框标题 */
+.kt-title{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.kt-title .ib{width:42px;height:42px;flex:none;border-radius:10px;
+  border:1px solid rgba(var(--acc),.4);display:flex;align-items:center;justify-content:center;
+  font-size:19px;background:linear-gradient(135deg,rgba(var(--acc),.16),transparent)}
+.kt-title h3{font-family:var(--serif);font-size:19px;letter-spacing:.2em;font-weight:600;
+  color:rgb(var(--txt));margin:0}
+.kt-title p{font-size:12px;color:rgba(var(--txt3),1);margin:3px 0 0;letter-spacing:.1em}
+
+/* ③ 左侧色条信息卡 */
+.kt-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.kt-card{position:relative;padding:14px 16px 14px 18px;border-radius:10px;
+  background:linear-gradient(135deg,rgba(var(--bg2),.9),rgba(var(--bg),.75));
+  border:1px solid rgba(var(--acc),.16)}
+.kt-card::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;
+  border-radius:0 3px 3px 0;background:rgba(var(--acc),.75)}
+.kt-card h5{font-size:13px;letter-spacing:.14em;color:rgba(var(--acc),.95);
+  margin:0 0 8px;font-weight:600}
+.kt-card .bd{font-size:13.5px;line-height:1.85;color:rgba(var(--txt),.92);
+  white-space:pre-wrap;word-break:break-word}
+.kt-card .bd.em{color:rgba(var(--txt3),.9);font-style:italic}
+
+/* 头部概览卡（借鉴伙伴页的角色抬头） */
+.kt-hero{display:flex;align-items:flex-start;gap:18px;padding:18px 20px;border-radius:12px;
+  background:linear-gradient(120deg,rgba(var(--acc),.12),rgba(var(--bg2),.9));
+  border:1px solid rgba(var(--acc),.24);margin-bottom:18px}
+.kt-hero .av{width:66px;height:66px;border-radius:12px;object-fit:cover;
+  object-position:top center;flex:none;border:1px solid rgba(var(--acc),.35)}
+.kt-hero .info{flex:1;min-width:0}
+.kt-hero .nm{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.1em;
+  display:flex;align-items:center;gap:10px}
+.kt-hero .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.kt-hero .chip{font-size:11.5px;padding:3px 10px;border-radius:6px;
+  border:1px solid rgba(var(--acc),.28);color:rgba(var(--txt2),1);
+  background:rgba(var(--bg),.5)}
+.kt-hero .big{flex:none;text-align:center;padding:8px 16px;border-radius:10px;
+  border:1px solid rgba(var(--acc),.3);background:rgba(var(--bg),.55)}
+.kt-hero .big b{display:block;font-size:24px;color:rgb(var(--acc));line-height:1.2;
+  font-variant-numeric:tabular-nums}
+.kt-hero .big span{font-size:11px;color:rgba(var(--txt3),1);letter-spacing:.14em}
+
+/* 好感度条 */
+.kt-meter{height:5px;border-radius:3px;background:rgba(var(--bg),.9);overflow:hidden;margin-top:7px}
+.kt-meter i{display:block;height:100%;border-radius:3px;
+  background:linear-gradient(90deg,rgba(var(--acc),.6),rgb(var(--acc)))}
+
+/* 标签串 */
+.kt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.kt-chips .c{font-size:11.5px;padding:2px 9px;border-radius:5px;
+  background:rgba(var(--acc),.1);color:rgba(var(--acc),.95);
+  border:1px solid rgba(var(--acc),.24)}
+.kt-card.warn-card::before{background:rgba(240,200,110,.8)}
+.kt-card.bad-card::before{background:rgba(236,120,120,.85)}
+.kt-card .av{flex:none}
+/* 存读档列表也用色条卡 */
+.kt .slot{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  position:relative;padding:13px 16px 13px 18px;border-radius:10px;margin-bottom:10px;
+  background:linear-gradient(135deg,rgba(var(--bg2),.9),rgba(var(--bg),.75));
+  border:1px solid rgba(var(--acc),.16)}
+.kt .slot::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;
+  border-radius:0 3px 3px 0;background:rgba(var(--acc),.7)}
+.kt .slot b{font-size:14.5px;color:rgb(var(--txt))}
+.kt .slot .meta{color:rgba(var(--txt3),1);font-size:12px;margin-top:3px}
+.kt .slot button{background:rgba(var(--acc),.1);border:1px solid rgba(var(--acc),.34);
+  color:rgb(var(--acc));border-radius:7px;padding:5px 12px;cursor:pointer;
+  font:inherit;font-size:12.5px}
+.kt .slot button:hover{background:rgba(var(--acc),.22)}
+
+/* 禁用条目不再糊成一团：保留可读度，只降饱和 + 加「关」标 */
+.kt-item.off{opacity:1}
+.kt-item.off .kt-i-t{color:rgba(var(--txt2),.62)}
+.kt-item.off .kt-i-s{color:rgba(var(--txt3),.6)}
+.kt-item.off .tag{opacity:.5}
+.kt-item.off::after{content:'关';position:absolute;right:12px;top:50%;
+  transform:translateY(-50%);font-size:10.5px;color:rgba(var(--txt3),.75);
+  border:1px solid rgba(var(--txt3),.3);border-radius:4px;padding:0 5px}
+.kt-item{position:relative;padding-right:40px}
+.kt-item.on::after{color:rgba(var(--acc),.9);border-color:rgba(var(--acc),.4)}
+.kt .vx-av{width:22px;height:22px;border-radius:50%;object-fit:cover;
+  object-position:top center;vertical-align:-6px;margin-right:7px}
+.kt .vx-edit{margin-left:auto;padding:3px 11px;font-size:11.5px}
+.kt .kt-card h5{display:flex;align-items:center;gap:6px}
+
+
+/* ------------------------------------------------------------
+   状态栏（时钟 / 电量）是 54px 高的绝对定位浮层，z-index 50。
+   设置导航原来从 y=0 开始，「设 置」标题正好被时钟压住 —— v5.19 起就有。
+
+   ⚠ 提权说明：手机壳的 resource/juus/phone.css 里有
+        #jup-root *{margin:0;padding:0;box-sizing:border-box}
+     那是 ID 特异性，普通的 .kt-nav 压不过它。所以这里必须也带上 #jup-root。
+   ------------------------------------------------------------ */
+#jup-root .kt-nav{padding:58px 12px 14px}
+#jup-root .kt-main > .kt-head{padding-top:46px}
+@media (max-width:1100px){
+  #jup-root .kt-nav{padding:58px 8px 8px}
+  #jup-root .kt-main > .kt-head{padding-top:14px}
+}
+/* 「设 置」带 .3em 字距又有 ◆ 和 ⌂ 两个附件，窄一点就折行了 */
+#jup-root .kt-brand{white-space:nowrap;padding-left:0;padding-right:0}
+/* 同一行里的相邻按钮要留缝，光靠 HTML 里那个空格顶不住 */
+#jup-root .kt-btn + .kt-btn{margin-left:10px}
+#jup-root .kt-sec > .kt-btn{margin-top:10px}

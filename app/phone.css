@@ -1,0 +1,359 @@
+/* ============================================================
+ * app/phone.css —— iPhone 风格机身 + 主屏 App 网格
+ * 机身、灵动岛、主屏这套取自 Larimar；
+ * 屏幕里的列表、气泡、pill 卡沿用 juus 的类（见 resource/juus/phone.css）。
+ * ============================================================ */
+#phone-overlay{
+  position:fixed;inset:0;z-index:200;display:none;
+  align-items:center;justify-content:center;
+  padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom));
+  background:rgba(4,10,16,.5);backdrop-filter:blur(10px) saturate(120%);
+  -webkit-backdrop-filter:blur(10px) saturate(120%);
+}
+#phone-overlay.on{display:flex}
+
+/* ---------- 机身 ---------- */
+.ph-frame{
+  /* iPad Air 竖版。比手机宽一倍，列表和编辑器都排得开 */
+  --w:1060px; --h:1180px; --r:34px; --rim:11px; --sr:23px;
+  position:relative;width:min(var(--w),100%);height:min(var(--h),100%);
+  aspect-ratio:1060/1180;
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',
+       'Microsoft YaHei',system-ui,sans-serif;
+  animation:phIn .34s cubic-bezier(.22,1,.36,1);
+}
+@keyframes phIn{from{transform:translateY(18px) scale(.94);opacity:0}to{transform:none;opacity:1}}
+@media (max-height:1200px){ .ph-frame{aspect-ratio:auto;height:min(var(--h),100%)} }
+@media (max-width:1100px){ .ph-frame{--w:393px;--h:852px;--r:48px;--rim:7px;--sr:42px;
+  aspect-ratio:393/852} }
+
+.ph-rim{
+  position:absolute;inset:0;border-radius:var(--r);padding:var(--rim);
+  background:linear-gradient(155deg,#8e8e93 0%,#636366 18%,#3a3a3c 42%,#1c1c1e 68%,#48484a 100%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.22),0 0 0 2px rgba(0,0,0,.55),
+             0 28px 80px rgba(0,0,0,.55),0 8px 24px rgba(0,0,0,.28);
+}
+.ph-screen{
+  position:absolute;inset:var(--rim);border-radius:var(--sr);overflow:hidden;
+  background:#0b1016;isolation:isolate;
+}
+.ph-island{
+  position:absolute;top:9px;left:50%;transform:translateX(-50%);z-index:60;
+  width:9px;height:9px;border-radius:50%;background:#0a0a0a;
+  box-shadow:0 0 0 1px rgba(255,255,255,.08);
+}
+@media (max-width:1100px){ .ph-island{top:11px;width:126px;height:37px;border-radius:20px} }
+.ph-status{
+  position:absolute;top:0;left:0;right:0;height:54px;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 30px 0;color:#fff;font-size:14px;font-weight:600;
+  pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.ph-status .r{display:flex;gap:6px;align-items:center;font-size:12px}
+.ph-homebar{
+  position:absolute;left:50%;bottom:-2px;transform:translateX(-50%);z-index:70;
+  width:52px;height:52px;border:0;border-radius:50%;cursor:pointer;padding:0;
+  display:flex;align-items:center;justify-content:center;color:#eaf4fa;
+  background:rgba(20,32,44,.72);backdrop-filter:blur(10px) saturate(1.3);
+  box-shadow:0 0 0 1px rgba(255,255,255,.18),0 6px 20px rgba(0,0,0,.45);
+  transition:transform .16s,background .16s}
+.ph-homebar:hover{background:rgba(40,60,80,.85);transform:translateX(-50%) translateY(-2px)}
+.ph-homebar:active{transform:translateX(-50%) scale(.92)}
+
+/* ---------- 图层 ---------- */
+.ph-layer{position:absolute;inset:0;display:none;flex-direction:column;
+  padding-top:54px;padding-bottom:26px}
+.ph-layer.on{display:flex}
+.ph-layer.app{background:linear-gradient(170deg,#f3f8ff 0%,#eaf2fb 45%,#fdeee6 100%);
+  color:#2b3d4d;animation:appIn .26s cubic-bezier(.22,1,.36,1)}
+@keyframes appIn{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
+
+/* ---------- 主屏 ---------- */
+.ph-home{
+  background:
+    radial-gradient(120% 80% at 20% 0%,rgba(120,190,255,.55),transparent 60%),
+    radial-gradient(110% 70% at 85% 30%,rgba(255,180,190,.45),transparent 62%),
+    linear-gradient(175deg,#16314f 0%,#1d3a5c 40%,#38304f 100%);
+}
+.ph-home{justify-content:center!important;align-items:center;gap:26px;padding:60px 32px 40px}
+.ph-clock{flex:none;padding:0;color:#fff;text-align:center;
+  text-shadow:0 2px 14px rgba(0,0,0,.4);display:flex;flex-direction:column;
+  align-items:center;width:100%;max-width:820px}
+.ph-clock .t{font-size:clamp(58px,8vw,96px);line-height:.92;font-weight:200;letter-spacing:-3px}
+.ph-clock .d{font-size:16px;opacity:.92;margin-top:6px;font-weight:500;letter-spacing:.1em}
+.ph-widget{margin-top:20px;align-self:stretch;width:100%;max-width:760px;text-align:left;
+  background:rgba(12,22,32,.44);backdrop-filter:blur(16px) saturate(1.35);
+  border:1px solid rgba(255,255,255,.15);border-radius:22px;padding:20px 26px;
+  font-size:15px;line-height:1.9;text-shadow:none;color:rgba(255,255,255,.94);
+  display:grid;grid-template-columns:1fr 1fr;gap:6px 30px}
+.ph-widget h5{grid-column:1/-1;font-size:12px;letter-spacing:.26em;opacity:.72;
+  margin-bottom:6px;font-weight:600}
+.ph-widget .wrow{display:flex;gap:12px;align-items:baseline}
+.ph-widget .wrow b{font-weight:600;color:#9fe0ff;min-width:44px;font-size:13px;flex:none}
+.ph-widget .wrow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-widget .whot{grid-column:1/-1;margin-top:10px;padding-top:12px;
+  border-top:1px solid rgba(255,255,255,.14)}
+.ph-widget .whot .hl{display:flex;gap:10px;font-size:13.5px;padding:2px 0;align-items:baseline}
+.ph-widget .whot .hl i{font-style:normal;color:#ffb27a;font-weight:700;flex:none;width:14px}
+.ph-widget .whot .hl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-widget .wempty{grid-column:1/-1;opacity:.7;font-size:14px}
+.ph-grid{flex:none;padding:0;display:flex;justify-content:center;width:100%}
+.ph-dock{display:grid;grid-template-columns:repeat(3,1fr);gap:22px 30px;
+  padding:24px 32px;border-radius:32px;
+  background:rgba(14,24,34,.38);backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.13);
+  box-shadow:0 10px 34px rgba(0,0,0,.34)}
+@media (max-width:1100px){
+  .ph-home{padding:30px 14px;gap:16px}
+  .ph-clock{padding:0}
+  .ph-grid{padding:0}
+  .ph-dock{grid-template-columns:repeat(3,1fr);gap:14px 16px;padding:16px 18px;border-radius:26px}
+  .ph-app i{width:58px;height:58px;font-size:26px}
+  .ph-app span{font-size:11px;max-width:74px}
+  .ph-widget{max-width:100%;padding:14px 16px;font-size:13.5px;
+    grid-template-columns:1fr;gap:3px}
+}
+.ph-app{display:flex;flex-direction:column;align-items:center;gap:6px;
+  cursor:pointer;background:none;border:0;padding:0;font:inherit}
+.ph-app i{
+  width:88px;height:88px;font-size:38px;border-radius:15px;display:flex;align-items:center;
+  justify-content:center;font-size:27px;font-style:normal;position:relative;
+  box-shadow:0 4px 12px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.35);
+  transition:transform .14s}
+.ph-app:active i{transform:scale(.9)}
+.ph-app span{font-size:13px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);
+  max-width:108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-app i .bdg{position:absolute;top:-4px;right:-4px;min-width:19px;height:19px;
+  border-radius:999px;background:#ff3b30;color:#fff;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;padding:0 5px;
+  border:2px solid rgba(0,0,0,.12)}
+
+/* ---------- App 顶栏 ---------- */
+.ph-bar{flex:none;display:flex;align-items:center;gap:10px;
+  padding:6px 16px 10px;border-bottom:1px solid rgba(43,61,77,.12)}
+.ph-bar .bk{background:none;border:0;font-size:22px;line-height:1;color:#2b7fd0;
+  cursor:pointer;padding:0 4px}
+.ph-bar h2{flex:1;font-size:19px;font-weight:700;margin:0}
+.ph-bar .act{background:rgba(43,127,208,.12);border:0;color:#2b7fd0;border-radius:8px;
+  padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+.ph-body{flex:1;min-height:0;overflow-y:auto;padding:10px 12px}
+.ph-body::-webkit-scrollbar{width:0}
+
+/* 分段控件（私聊 / 群聊） */
+.ph-seg{flex:none;display:flex;background:rgba(43,61,77,.1);border-radius:10px;
+  padding:3px;margin:0 16px 8px}
+.ph-seg button{flex:1;background:none;border:0;border-radius:7px;padding:6px;
+  font:inherit;font-size:13px;font-weight:600;color:#6b8199;cursor:pointer}
+.ph-seg button.on{background:#fff;color:#2b3d4d;box-shadow:0 1px 3px rgba(0,0,0,.14)}
+
+/* ---------- 让 juus 的组件适配竖屏 ---------- */
+#jup-root{position:static;width:auto;height:100%;max-width:none;max-height:none;
+  border-radius:0;box-shadow:none;background:none;display:flex;flex-direction:column}
+#jup-root .split,#jup-root .panel,#jup-root .pbar,#jup-root .pbody,
+#jup-root .igbody,#jup-root .igbar{
+  position:static;inset:auto;display:block;background:none;border:0;
+  border-radius:0;padding:0;margin:0;min-width:0;max-width:none;flex:none}
+/* 私聊 / 群聊 面板靠 .on 切换 —— 之前这里被一并写成 display:block，
+   导致两个列表永远同时显示，分段控件看着就像点了没反应。 */
+#jup-root .sub{position:static;inset:auto;display:none;background:none;border:0;
+  border-radius:0;padding:0;margin:0;min-width:0;max-width:none;flex:none}
+#jup-root .sub.on{display:block}
+#jup-root .ct{border-radius:12px;margin-bottom:7px;background:rgba(255,255,255,.72);
+  border:1px solid rgba(180,210,240,.5)}
+#jup-root .cw{position:absolute;inset:0;z-index:5;background:#eef4fb;
+  display:none;flex-direction:column}
+#jup-root .cw.on{display:flex}
+#jup-root .ms{flex:1;min-height:0;overflow-y:auto;padding:12px}
+#jup-root .postd{position:absolute;inset:0;z-index:6;background:#f4f8fd;
+  display:none;flex-direction:column;overflow:hidden}
+#jup-root .postd.on{display:flex}
+#jup-root .pill{margin-bottom:9px;border-radius:14px}
+#jup-root .sp{position:absolute;left:0;right:0;bottom:56px;max-height:46%;
+  overflow-y:auto;display:none;grid-template-columns:repeat(4,1fr);gap:8px;
+  padding:10px;background:rgba(255,255,255,.97);
+  border-top:1px solid rgba(180,210,240,.6);z-index:8}
+#jup-root .sp.on{display:grid}
+#jup-root .si{cursor:pointer;text-align:center}
+#jup-root .si img{width:100%;aspect-ratio:1;object-fit:contain;border-radius:8px}
+#jup-root .si span{display:block;font-size:10px;color:#6b8199;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 设置层：撑满、不留 App 内边距 */
+#jup-root .ph-layer[data-app="cfg"]{padding:54px 0 26px;background-image:none}
+
+/* 搬进手机的深色面板 */
+.ph-layer .jp-panel{height:100%;display:flex;flex-direction:column;
+  background:#0e141b;border:1px solid rgba(120,200,230,.2);border-radius:14px;
+  padding:12px 13px;overflow:hidden;color:#eaf4fa;
+  font:13px/1.6 'PingFang SC','Microsoft YaHei',system-ui,sans-serif}
+.ph-layer .jp-body{flex:1;min-height:0;overflow-y:auto}
+.ph-layer .jp-body .vrow{grid-template-columns:72px minmax(0,1fr)}
+.ph-layer #tune.in-phone{position:static;width:auto;background:none;border:0;
+  padding:0;backdrop-filter:none;color:#8ab2c6}
+
+/* 平板宽度下 JUUS 走双栏。
+   注意 .cw 是 .ph-layer 的直接子元素（不是 .ph-body 的子元素），
+   所以网格必须建在 .ph-layer 上，否则 .cw 会掉出网格、以普通块流糊住下半屏。 */
+@media (min-width:1101px){
+  #jup-root .ph-layer[data-app="juus"]{
+    display:grid;grid-template-columns:380px minmax(0,1fr);
+    grid-template-rows:auto auto minmax(0,1fr);gap:0 14px;
+    padding:54px 14px 26px}
+  #jup-root .ph-layer[data-app="juus"]:not(.on){display:none}
+  #jup-root .ph-layer[data-app="juus"] > .ph-bar{grid-column:1/3;grid-row:1}
+  #jup-root .ph-layer[data-app="juus"] > .ph-seg{grid-column:1;grid-row:2;margin:0 0 8px}
+  #jup-root .ph-layer[data-app="juus"] > .ph-body{grid-column:1;grid-row:3;
+    min-height:0;overflow-y:auto;padding:0}
+  #jup-root .cw{grid-column:2;grid-row:2/4;position:relative;inset:auto;
+    display:flex;border-radius:14px;border:1px solid rgba(180,210,240,.55);
+    overflow:hidden;background:#fff;min-height:0;padding-top:0}
+  #jup-root .cw .bk{display:none}
+  #jup-root .cw > .ph-bar{padding:10px 14px}
+  /* 没选会话时不摆一块空白板，给个提示 */
+  #jup-root .cw:not(.on) > *{display:none}
+  #jup-root .cw:not(.on){align-items:center;justify-content:center;
+    background:rgba(255,255,255,.45);border-style:dashed}
+  #jup-root .cw:not(.on)::after{content:'← 选一个会话';color:#9ab3c8;font-size:13px;display:block}
+  #jup-root .sp{position:absolute;left:0;right:0;bottom:56px}
+}
+@media (max-width:1100px){
+  #jup-root .cw{padding-top:0}
+}
+.ph-bar .hm{background:none;border:0;font-size:19px;line-height:1;color:#2b7fd0;
+  cursor:pointer;padding:0 6px 0 0;flex:none}
+.ph-bar .hm:hover{opacity:.7}
+
+/* ===== 顶栏里的分段控件 ===== */
+.ph-bar .ph-seg{flex:none;width:260px;margin:0 auto}
+.ph-bar .ph-seg button{padding:7px 14px;font-size:14px}
+.ph-bar h2{flex:0 0 auto;margin-right:auto}
+.ph-bar .act{flex:none}
+
+/* ===== JUUSTAGRAM ===== */
+.ig-pane{display:none}
+.ig-pane.on{display:block}
+#jup-root .ph-layer[data-app="ig"] .ph-body{padding:16px 22px 22px}
+.xl{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+  gap:18px;max-width:1000px;margin:0 auto;align-content:start}
+.pcard2{background:#fff;border:1px solid rgba(180,210,240,.5);border-radius:16px;
+  overflow:hidden;cursor:pointer;transition:transform .16s,box-shadow .16s;display:flex;
+  flex-direction:column}
+.pcard2:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(60,110,160,.16)}
+.pc-cover{position:relative;aspect-ratio:3/2;overflow:hidden;background:#dfeaf5;flex:none}
+.pc-cover img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.pc-tag{position:absolute;left:9px;top:9px;background:rgba(10,20,32,.55);color:#fff;
+  font-size:11px;padding:2px 9px;border-radius:999px;backdrop-filter:blur(4px)}
+.pc-body{padding:10px 12px 11px;display:flex;flex-direction:column;gap:5px;flex:1}
+.pc-body h3{font-size:14px;font-weight:700;color:#2b3d4d;line-height:1.35;margin:0}
+.pc-body p{font-size:12px;color:#6b8199;line-height:1.5;margin:0;flex:1}
+.pc-foot{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#7f97ad;margin-top:2px}
+.pc-av{width:19px;height:19px;border-radius:50%;object-fit:cover;object-position:top center}
+.pc-au{font-weight:600;color:#4a6076;max-width:80px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.pc-lk{margin-left:auto;color:#e0568f}
+
+/* 帖子详情 */
+.pd{max-width:640px;margin:0 auto}
+.pd-hero{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;
+  background:#dfeaf5;margin-bottom:12px}
+.pd-hero img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.pd-au{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.pd-au .av{width:38px;height:38px;border-radius:50%;object-fit:cover;object-position:top center}
+.pd-au b{display:block;font-size:14px;color:#2b3d4d}
+.pd-au span{font-size:11.5px;color:#8ea6ba}
+.pd-t{font-size:19px;font-weight:700;color:#22303d;margin:0 0 10px;line-height:1.4}
+.pd-b{font-size:14px;line-height:1.85;color:#3b4d5e;margin-bottom:14px}
+.pd-b .hl{font-weight:600}
+.pd-m{display:flex;gap:18px;font-size:12.5px;color:#7f97ad;
+  padding:10px 0;border-top:1px solid rgba(43,61,77,.1);
+  border-bottom:1px solid rgba(43,61,77,.1);margin-bottom:12px}
+.pd-c h4{font-size:13px;color:#4a6076;margin-bottom:10px}
+.pd-cc{display:flex;gap:9px;margin-bottom:11px}
+.pd-cc .av{width:30px;height:30px;border-radius:50%;flex:none;object-fit:cover;object-position:top center}
+.pd-cc b{font-size:12.5px;color:#2b7fd0}
+.pd-cc p{font-size:13px;color:#3b4d5e;margin-top:1px;line-height:1.55}
+.pd .dim{color:#9ab3c8;font-size:12.5px}
+
+/* 热点榜 */
+.hotlist{max-width:860px;margin:0 auto}
+.hot-row{display:flex;align-items:flex-start;gap:14px;background:#fff;
+  border:1px solid rgba(180,210,240,.5);border-radius:14px;padding:14px 18px;margin-bottom:10px;
+  transition:transform .16s,box-shadow .16s}
+.hot-row:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(60,110,160,.13)}
+.hot-n{flex:none;width:28px;text-align:center;font-size:17px;font-weight:800;color:#9ab3c8}
+.hot-n.top{color:#ff6a3d}
+.hot-main{flex:1;min-width:0}
+.hot-t{font-size:15px;font-weight:600;color:#2b3d4d;line-height:1.4}
+.hot-c{font-size:12px;color:#7f97ad;margin-top:3px;line-height:1.5}
+.hot-cat{flex:none;font-size:11px;color:#2b7fd0;background:rgba(43,127,208,.1);
+  border-radius:999px;padding:2px 9px;align-self:center}
+
+/* 主屏不再重复显示时间 */
+#jup-root.at-home .ph-status #ph-time{visibility:hidden}
+
+/* ===== 推荐流：横条时间线（借鉴 Larimar 的 twitter 版式，去掉头像） ===== */
+.xl{display:block!important;max-width:820px;margin:0 auto}
+.fd{display:block;padding:15px 18px;border-bottom:1px solid rgba(180,210,240,.45);
+  cursor:pointer;transition:background .16s}
+.fd:hover{background:rgba(255,255,255,.7)}
+.fd:first-child{border-top:1px solid rgba(180,210,240,.45)}
+.fd-hd{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;
+  color:#7f97ad;margin-bottom:5px}
+.fd-hd b{font-size:14px;color:#2b3d4d;font-weight:700}
+.fd-hd .hd{opacity:.8}
+.fd-hd .tg{background:rgba(43,127,208,.1);color:#2b7fd0;border-radius:999px;padding:1px 9px;font-size:11.5px}
+.fd-hd .tm{margin-left:auto;opacity:.75}
+.fd-t{font-size:15.5px;font-weight:700;color:#22303d;margin:0 0 4px;line-height:1.45}
+.fd-b{font-size:13.5px;color:#54697d;line-height:1.65;margin:0 0 9px}
+.fd-ac{display:flex;gap:22px;font-size:12.5px;color:#8ba3b8}
+.fd-ac .lk{margin-left:auto;color:#e0568f}
+
+/* 帖子详情：评论栏 */
+#jup-root .postd{padding-bottom:0}
+.cmtbar{flex:none;display:flex;gap:8px;padding:10px 14px;background:#fff;
+  border-top:1px solid rgba(43,61,77,.12)}
+.cmtin{flex:1;border:1px solid rgba(180,210,240,.8);border-radius:18px;
+  padding:8px 15px;font:inherit;font-size:13.5px;outline:none}
+.cmtin:focus{border-color:#0a84ff}
+.cmtsend{border:0;background:#0a84ff;color:#fff;border-radius:18px;
+  padding:8px 18px;font:inherit;cursor:pointer}
+.pd-cc.mine b{color:#e0568f}
+.pd-cc{padding-left:0}
+
+/* ===== 选项 ===== */
+#choices button.picked{background:rgba(70,182,207,.45);border-color:rgba(105,219,246,.9)}
+#choices button::before{content:'▸ ';opacity:.6}
+
+/* ===== 舰娘档案 ===== */
+.dsl{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+  gap:14px;max-width:1000px;margin:0 auto}
+.dcard{display:flex;gap:14px;padding:14px;border-radius:14px;background:#fff;
+  border:1px solid rgba(180,210,240,.5);position:relative;overflow:hidden;
+  transition:transform .16s,box-shadow .16s}
+.dcard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:var(--lv,#9ab3c8)}
+.dcard:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(60,110,160,.16)}
+.dcard.lv-oath{--lv:#e0568f}.dcard.lv-love{--lv:#ff8fa8}
+.dcard.lv-close{--lv:#ffab5c}.dcard.lv-warm{--lv:#5ac8fa}
+.dcard.lv-known{--lv:#8fd6b0}.dcard.lv-new{--lv:#b6c6d4}
+.dc-av{width:76px;height:76px;flex:none;border-radius:12px;overflow:hidden;
+  background:#e6eef6;margin-left:6px}
+.dc-av img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.dc-main{flex:1;min-width:0}
+.dc-hd{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.dc-hd b{font-size:15.5px;color:#22303d}
+.dc-on,.dc-off,.dc-oath,.dc-lv{font-size:11px;padding:1px 8px;border-radius:999px}
+.dc-on{background:rgba(120,200,150,.18);color:#2a8a5c}
+.dc-off{background:rgba(150,170,190,.18);color:#7f97ad}
+.dc-oath{background:rgba(224,86,143,.16);color:#c93b73}
+.dc-lv{margin-left:auto;background:var(--lv);color:#fff;font-weight:600}
+.dc-fav{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:#7f97ad}
+.dc-fav b{color:#22303d;font-size:14px;font-variant-numeric:tabular-nums}
+.dc-bar{flex:1;height:5px;border-radius:3px;background:#e6eef6;overflow:hidden}
+.dc-bar i{display:block;height:100%;border-radius:3px;background:var(--lv)}
+.dc-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.dc-tags .t{font-size:11.5px;padding:2px 9px;border-radius:6px;
+  background:rgba(43,127,208,.08);color:#4a6076;border:1px solid rgba(180,210,240,.6)}
+.dc-tags .t em{font-style:normal;color:#8ba3b8;margin-right:5px}
+.dc-tags .t-cloth{background:rgba(190,150,240,.12);color:#7a52aa;border-color:rgba(190,150,240,.35)}
+.dc-tags .t-mood{background:rgba(255,171,92,.14);color:#c47a26;border-color:rgba(255,171,92,.38)}
+.ph-typing{font-size:12px;color:#8ba3b8;padding:6px 12px;font-style:italic}

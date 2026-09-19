@@ -1,0 +1,17 @@
+{
+  "name": "gal-engine",
+  "version": "5.20.0",
+  "description": "一个从 index.html 直接双击就能跑的 galgame 前端引擎，不依赖 SillyTavern",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node tools/smoke-test.js && node tools/unit/run-all.mjs",
+    "test:smoke": "node tools/smoke-test.js",
+    "test:unit": "node tools/unit/run-all.mjs",
+    "tokens": "node tools/measure-tokens.mjs",
+    "fixtures": "node tools/build-fixtures.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.0"
+  }
+}
