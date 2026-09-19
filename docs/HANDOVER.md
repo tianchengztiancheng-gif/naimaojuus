@@ -90,6 +90,7 @@ gal-engine/
 │   └─ editor-theme.css    设置工作台的碧蓝皮肤
 ├─ core/
 │   ├─ engine.js     600 行  一轮对话的完整流程 + 变量 + 独立生成
+│   ├─ cardres.js    330 行  ★ 载卡时从卡里直接抽立绘/场景/手机资源
 │   ├─ worldbook.js  230 行  世界书激活（蓝灯绿灯/递归/预算/语义补捞）
 │   ├─ imagegen.js   560 行  ★ NovelAI 出图（提示词编译 + ZIP 解包）
 │   ├─ snapshot.js   440 行  ★ 正文 → 出图提示词（两段式 / 内联）
@@ -120,8 +121,9 @@ gal-engine/
 │   ├─ build-phone.py      抽手机资源与样式
 │   ├─ build-fixtures.mjs  ★ 从真表生成测试用的合成表（URL 全占位）
 │   ├─ measure-tokens.mjs  ★ 复现「粗估差多少」那张表
-│   ├─ smoke-test.js       ★ 290 项冒烟测试（jsdom 真跑 index.html）
-│   └─ unit/               ★ 281 项单测，run-all.mjs 一次跑完
+│   ├─ e2e-card.mjs     ★ 真浏览器验「没素材包也能靠卡演出来」（需 playwright）
+│   ├─ smoke-test.js       ★ 307 项冒烟测试（jsdom 真跑 index.html）
+│   └─ unit/               ★ 332 项单测，run-all.mjs 一次跑完
 └─ test/
     ├─ fixtures/resource.js ★ 合成素材表（自动生成，进仓库）
     ├─ resources.html      素材验证台（翻图、查坏链）
@@ -527,6 +529,8 @@ v5.20 初版默认两段式（每轮多发一次解析请求）。改了：现�
 | 用 `<aside>` 做布局，元素被拽到右边 | `style.css` 里有一条**裸元素选择器** `aside{position:absolute;right:0;width:440px}`（老侧栏留下的）。做新布局别用 `<aside>`，或者提权盖掉 |
 | 锁了皮肤一点「下一句」就跳回去 | 一轮的立绘是 `processOutput` 里**一次性**全解析好的。只重刷当前这句，后面几句还是旧的。要 `refreshSpritesFor()` 把整条日志里这几个角色重解析一遍 |
 | 文档里的分词误差表错了两版 | 用的 `gpt-tokenizer-cl100k_base.js` 是从 Larimar vendor/ 拿的，**那文件里装的其实是 o200k 数据**。第三方 vendor 的文件名不是元数据，要验内容 |
+| 载了卡舞台还是空的 | `loadCard()` 压根没读立绘 —— 那一步只存在于离线的 build-juus.py 里。见七·六 |
+| 卡里一段代码被插得满正文都是 | 那条正则脚本没有 `findRegex`，空正则在每个字符缝隙都匹配 |
 | 界面上冒出 `**文字**` 或 `<b>` | 那几处是 `textContent` 赋值，HTML 标签和 Markdown 都不会被解析。要粗体就得用 `innerHTML` |
 | 锁了皮肤，一点下一句又跳回去 | 一轮十几句的立绘是 `processOutput` 时**一次性全解析好**的。只刷新当前句没用，得把整条日志里**这个角色**的立绘重解析（`refreshSpritesFor`）。只刷这一个角色 —— 全量重刷会把别人的多图差分重新随机抽一次，「没说话的人也在动」就又回来了 |
 | CG 闪一下就没 | 图只挂在一句上。要让它铺到被换掉为止（`nearestCG`），不是只在那一句显示 |
@@ -559,10 +563,10 @@ node tools/smoke-test.js 你的卡.json
 
 | 少了什么 | 后果 | 怎么补上的 |
 |---|---|---|
-| 立绘/场景索引 | 舞台无图，通讯录为空 | 不补。README 里说清这是正常的，跑 `build-juus.py` 自己生成 |
+| 立绘/场景索引 | ~~舞台无图~~ | **载卡时从卡里直接读**（`core/cardres.js`，见七·六）。这才是正解，比「叫用户去跑 Python」好得多 |
 | `resource/juus/phone.css` | 手机屏幕里的组件没样式 | 新写了 `app/phone-inner.css`，按引擎自己的浅色配色重做一份 |
 | 素材表（测试要用） | smoke-test 跑不起来 | `tools/build-fixtures.mjs` 生成 `test/fixtures/resource.js`：结构照抄真表，URL 全是 `example.invalid` 占位，只留测试点名的十来个角色；手机帖子是手写的假内容 |
-| 卡规模相关的断言 | 「通讯录七百多人」这类没法成立 | 加了 `okCard()`，没真表时**跳过**而不是假装通过。真表在场 290 项全跑，只有 fixture 时 282 项 + 4 项跳过 |
+| 卡规模相关的断言 | 「通讯录七百多人」这类没法成立 | 加了 `okCard()`，没真表时**跳过**而不是假装通过。真表在场 307 项全跑，只有 fixture 时 299 项 + 4 项跳过 |
 
 ### 三份手机 CSS 的分工与加载顺序
 
@@ -588,6 +592,80 @@ app/phone.css              机身 + 竖屏重排              ← 永远最后
 `core/vendor/larimar-preset.js` / `larimar-regex.js` 查下来**从未被加载过**
 （`index.html` 里没有、代码里没引用，只有 `core/engine.js` 一行旧注释提到），
 是死代码，已删除 —— 顺带解决了 Larimar 没有任何许可声明这个问题。
+
+
+## 七·六、载卡时从卡里直接读素材（v5.20.1 补的一个缺陷）
+
+### 缺陷本身
+
+`engine.loadCard()` 原来只做三件事：读世界书、收正则脚本、装手机规则条目。
+**它没读立绘。** 立绘/场景/默认立绘/手机资源全靠 `tools/build-juus.py`
+**离线**抽成 `resource/juus/*.js`，由 `index.html` 用 `<script>` 静态加载。
+
+于是：卡载进去了，`window.RESOURCE` 还是空的。没跑过那个 Python 脚本的人
+（比如刚从 git 克隆下来的人）载完卡进游戏，舞台是空的，还以为坏了。
+
+数据本来就在卡里。非要先跑一遍 Python 才能用，是我们自己的流程强加的，
+不是必须的。`core/cardres.js` 把那四十行抽取逻辑搬到了运行时。
+
+### 数据在卡的什么位置
+
+| 内容 | 位置 | 变量 |
+|---|---|---|
+| 立绘 / 场景 / 默认立绘 | `data.extensions.regex_scripts[]` 里 scriptName 含「gal MVU」那条的 `replaceString` | `EXPRESSION_MAP` `SCENE_MAP` `DEFAULT_SPRITES` |
+| 手机资源 | `data.extensions.tavern_helper.scripts[]` 里 name 为「juus小手机」那条的 `content` | `AVATARS` `STICKERS` `DEFAULT_AVATARS` `GROUP_META` `FACTION_MEMBERS` `BASE_POSTS` `BASE_TRENDS` |
+
+**按名字找不到就按内容找**（`findSource()`）——
+改过脚本名的分叉卡也认，因为变量名是代码里到处引用的，不会随便改。
+
+### 三个不显然的地方
+
+**一、截字面量时必须跳字符串。** 立绘 URL 里出现一个 `}`
+（真卡里就有，catbox 的随机文件名会带）就足以把括号配平带歪，
+截出来半截。`literalAfter()` 里跳过了字符串和注释。
+
+**二、解析要三级降级。** 卡里那些字面量不是严格 JSON：有注释、裸键、
+尾逗号、单引号，而且 `GROUP_META` 会**引用另一个变量** `FACTION_MEMBERS`。
+所以：`JSON.parse` → 放宽后再 `JSON.parse` → `new Function` 求值。
+第三级确实是在执行卡里的代码；之所以能接受，是因为引擎本来就会跑卡自带的
+正则脚本，而且卡是用户自己从本机选的文件，信任级别一样。
+介意就传 `{evalFallback:false}`，那样解析不了的条目直接丢掉。
+
+**三、必须就地合并，不能替换对象。**
+`core/resolver.js` 在加载时就抓住了引用：
+
+```js
+var R = global.RESOURCE = global.RESOURCE || { characters:{}, scenes:{}, defaults:{} };
+```
+
+`apply()` 要是写成 `global.RESOURCE = {...}`，resolver 手里还是旧对象，
+新数据它一个都看不见。单测里有一条专门盯这个
+（「没有替换 window.RESOURCE 对象本身」）。
+场景还要**按地点**合并，不能整个覆盖 —— 否则卡里有「食堂(朝)」
+就会把预置包里的「食堂(夜)」一起顶掉。
+
+### 顺带修的：空 findRegex 会把整段正文糊掉
+
+做端到端测试时踩到的。卡里常有「只是拿 `replaceString` 当代码仓库存着」
+的条目 —— 它没有 `findRegex`。`collectRegex()` 原来照收，编成
+`new RegExp('', 'g')`，这玩意在**每个字符缝隙**都匹配，于是那段代码被插得
+满正文都是，剧本全废。现在空 findRegex 直接跳过。
+
+这个坑之前没暴露是因为真卡的那几条都恰好有 findRegex，
+是我为测试临时造的合成卡把它顶出来了 —— **合成数据的价值之一就在这**。
+
+### 怎么验
+
+`tools/e2e-card.mjs`：真浏览器（Playwright）打开 `index.html`，
+把合成卡喂进开场引导的文件框，翻两页，看舞台上到底有没有立绘和背景。
+合成卡里的图都是 data: URI 的纯色方块，离线也能渲染。
+
+```bash
+mv resource/juus /tmp/ && node tools/e2e-card.mjs . /tmp/shots
+```
+
+playwright 不在默认依赖里，这个测试是可选的。
+`tools/smoke-test.js` 的 [6w2] 段用 jsdom 覆盖了同样的逻辑，那个是必跑的。
 
 
 ## 八、当前数据一览

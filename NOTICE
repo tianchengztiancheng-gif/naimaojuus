@@ -63,7 +63,8 @@ gal-engine —— 第三方来源与署名
 
   resource/juus/       从 juus 卡里抽出来的立绘 / 场景 / 头像 / 手机资源索引，
   resource/tianqing/   由 tools/build-juus.py 等脚本生成。已在 .gitignore 里。
-                       没有它们时手机 UI 用 app/phone-inner.css 这套自带皮肤。
+                       **不装它们也能玩**：这些内容本来就在卡里，
+                       core/cardres.js 会在载卡时当场读出来。
                        详见 resource/README.md。
 
   docs/立绘清单.md      juus 卡 3519 张立绘的清单，同样是卡的派生数据，不分发。

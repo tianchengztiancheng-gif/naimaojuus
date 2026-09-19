@@ -3137,9 +3137,25 @@
     };
   }
   function noteAssets() {
-    $('assets-note').innerHTML = '世界书 <b>' + eng.pool.length + '</b> 条 ｜ 预设 <b>' +
+    var html = '世界书 <b>' + eng.pool.length + '</b> 条 ｜ 预设 <b>' +
       (loaded.preset ? PromptBuilder.parsePreset(eng.preset).order.length : 0) + '</b> 块' +
       (loaded.card ? '' : ' <span class="warn">— 还缺角色卡</span>');
+    /* 从卡里抽出来多少立绘 —— 这是用户最关心的一件事（"我的图呢"），
+       载完卡就该直接看见数字，而不是等进了游戏发现舞台是空的。 */
+    if (loaded.card) {
+      var st = eng.resStats;
+      var R = window.RESOURCE || {};
+      var chars = Object.keys(R.characters || {}).length;
+      var defs = Object.keys(R.defaults || {}).length;
+      var locs = Object.keys(R.scenes || {}).length;
+      if (chars || defs || locs) {
+        html += ' ｜ 立绘 <b>' + (chars + defs) + '</b> 角色 ｜ 场景 <b>' + locs + '</b> 地点';
+        if (st && !st.found) html += ' <span class="dim">（来自预置素材包）</span>';
+      } else {
+        html += ' <span class="warn">— 这张卡里没找到立绘表，舞台会是空的</span>';
+      }
+    }
+    $('assets-note').innerHTML = html;
     $('btn-start').disabled = !loaded.card;
     if (typeof renderBoot === 'function') renderBoot();
   }

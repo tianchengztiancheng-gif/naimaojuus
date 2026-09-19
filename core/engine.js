@@ -57,6 +57,15 @@
     if (global.Editors && global.Editors.ensurePhoneRule) {
       global.Editors.ensurePhoneRule(this.pool);
     }
+    /* 立绘/场景/手机资源也在这张卡里，顺手抽出来装上。
+       以前这一步只能靠 tools/build-juus.py 离线做，没跑过脚本的人
+       载完卡舞台还是空的 —— 那是个缺陷，不是设计。见 core/cardres.js。
+       抽不到就是抽不到（别的卡没这些变量），不影响其余流程。 */
+    this.resStats = null;
+    if (global.CardRes) {
+      try { this.resStats = global.CardRes.apply(card); }
+      catch (e) { this.resStats = null; }
+    }
     return this.pool.length;
   };
 
@@ -71,6 +80,10 @@
     list.forEach(function (r) {
       if (r.disabled) return;
       var find = r.findRegex || '';
+      /* 空的 findRegex 会编成 new RegExp('','g') —— 它在每个字符缝隙都匹配，
+         于是 replaceString 被插得满正文都是，整段剧本就废了。
+         卡里那种「只是拿 replaceString 当代码仓库存着」的条目正是这样（没有 findRegex）。 */
+      if (!String(find).trim()) return;
       var rep = String(r.replaceString == null ? '' : r.replaceString);
       if (rep.length > MAX_REPLACE) return;                 // 渲染器，跳过
       /* 解析 /body/flags 形式，用字符串切分而不是正则，避免转义地狱 */

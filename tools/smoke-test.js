@@ -43,7 +43,7 @@ if (!HAVE_REAL_RES) console.log('（未找到真素材表，改用 test/fixtures
 const FILES = [
   ...(HAVE_REAL_RES ? REAL_RES : ['test/fixtures/resource.js']),
   'resource/aliases.js',
-  'core/tokens.js', 'core/vector.js',
+  'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/prompt.js', 'core/script.js',
   'core/phone.js', 'core/engine.js', 'core/api.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
@@ -111,7 +111,7 @@ console.log('\n[1c] 通讯录剔除名单');
 console.log('\n[2] 全局对象');
 ['RESOURCE', 'Resolver', 'Worldbook', 'PromptBuilder', 'ScriptParser',
  'Phone', 'Engine', 'GalAPI', 'GalStore', 'PHONE_RES', 'SCENE_ALIASES', 'Editors',
- 'Tokens', 'Vector', 'ImageGen', 'Snapshot', 'Gallery', 'CG']
+ 'Tokens', 'Vector', 'ImageGen', 'Snapshot', 'Gallery', 'CG', 'CardRes']
   .forEach(n => ok(n, typeof w[n] !== 'undefined'));
 
 function run(fn, label) {
@@ -875,6 +875,70 @@ ok('forSave 只带轻量字段', typeof w.Gallery.forSave === 'function');
 ok('sizeOf 能算 dataURL 体积',
    w.Gallery.sizeOf('data:image/png;base64,' + 'A'.repeat(400)) === 300,
    String(w.Gallery.sizeOf('data:image/png;base64,' + 'A'.repeat(400))));
+
+console.log('\n[6w2] 载卡时从卡里直接抽素材表');
+{
+  /* 这是「干净克隆也能玩」的关键一环：以前立绘只能靠 tools/build-juus.py
+     离线生成 resource/juus/*.js，载卡这一步根本没读立绘。 */
+  const GAL = 'var EXPRESSION_MAP = {"测试娘":{"常服":{"微笑":"https://t.invalid/a.png",' +
+    '"得意":["https://t.invalid/b.png","https://t.invalid/c.png"]}}};\n' +
+    'var SCENE_MAP = {"测试食堂(朝)":"https://t.invalid/s1.png","测试港区":"https://t.invalid/s2.png"};\n' +
+    'var DEFAULT_SPRITES = {"测试路人":"https://t.invalid/d.png"};';
+  const PH = "var AVATARS = {'测试娘':'https://t.invalid/av.png'};\n" +
+    "var STICKERS = {'测试躺':'https://t.invalid/st.png'};\n" +
+    "var DEFAULT_AVATARS = ['https://t.invalid/da.png'];";
+  const card = { data: { name: '冒烟合成卡',
+    extensions: {
+      regex_scripts: [{ scriptName: 'gal MVU', replaceString: GAL }],
+      tavern_helper: { scripts: [{ name: 'juus小手机', content: PH }] }
+    } } };
+
+  const before = Object.keys(w.RESOURCE.characters).length;
+  const E = new w.Engine();
+  E.loadCard(card);
+
+  ok('loadCard 之后卡里的角色进了 RESOURCE', !!w.RESOURCE.characters['测试娘']);
+  ok('角色数确实变多了', Object.keys(w.RESOURCE.characters).length === before + 1,
+     before + ' → ' + Object.keys(w.RESOURCE.characters).length);
+  ok('多图差分保留', (w.RESOURCE.characters['测试娘'].outfits['常服']['得意'] || []).length === 2);
+  ok('场景「地点(时段)」拆开了',
+     w.RESOURCE.scenes['测试食堂'] && w.RESOURCE.scenes['测试食堂']['朝'] === 'https://t.invalid/s1.png');
+  ok('默认立绘也装上了', (w.RESOURCE.defaults['测试路人'] || []).length === 1);
+  ok('手机头像装上了', (w.PHONE_RES.avatars || {})['测试娘'] === 'https://t.invalid/av.png');
+  ok('engine 记下了统计', E.resStats && E.resStats.chars === 1,
+     JSON.stringify(E.resStats && { c: E.resStats.chars, s: E.resStats.sprites }));
+
+  /* 真正要的是：Resolver 立刻能查到，不用刷新页面 */
+  const sp = w.Resolver.sprite('测试娘', '微笑', { outfit: '常服' });
+  ok('Resolver 马上就能查到新角色的立绘',
+     sp && sp.url === 'https://t.invalid/a.png', JSON.stringify(sp));
+  ok('Phone.roster() 也马上认得它', w.Phone.roster().indexOf('测试娘') >= 0);
+  const scn = w.Resolver.scene('测试食堂', '朝');
+  ok('Resolver 马上就能查到新场景', scn && scn.url === 'https://t.invalid/s1.png');
+
+  ok('普通卡（没有这些变量）不会炸',
+     (function () { try { new w.Engine().loadCard({ data: { name: '白卡' } }); return true; }
+                    catch (e) { return false; } })());
+  /* 卡里常有「只是拿 replaceString 当代码仓库存着」的条目 —— 没有 findRegex。
+     空 findRegex 会编成 new RegExp('','g')，在每个字符缝隙都匹配，
+     于是那段代码被插得满正文都是，整段剧本废掉。实测踩到过。 */
+  {
+    const E3 = new w.Engine();
+    E3.loadCard({ data: { name: '空正则卡', extensions: { regex_scripts: [
+      { scriptName: '没有 findRegex 的条目', replaceString: 'var X = 1;' },
+      { scriptName: '正常条目', findRegex: '/沙滩/g', replaceString: '海滩' }
+    ] } } });
+    ok('空 findRegex 的条目被跳过', E3.regexScripts.length === 1,
+       E3.regexScripts.map(r => r.name).join('、'));
+    const out = E3.processOutput('<Gal>\n去沙滩玩。|旁白|-|\n</Gal>');
+    ok('正文没有被那段代码糊掉', out.text.indexOf('var X') < 0, out.text.slice(0, 60));
+    ok('正常的正则还照样生效', out.text.indexOf('海滩') >= 0, out.text.slice(0, 60));
+  }
+
+  ok('普通卡的 resStats.found 为 false',
+     (function () { const E2 = new w.Engine(); E2.loadCard({ data: { name: '白卡' } });
+                    return E2.resStats && E2.resStats.found === false; })());
+}
 
 console.log('\n[6x] token 计数');
 ok('默认是粗估', w.Tokens.mode('gpt-4') === 'rough');
