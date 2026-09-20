@@ -678,6 +678,8 @@
       global.clearTimeout(timer);
       var err = new Error(describeNetworkError(e, url));
       err.kind = 'network';
+      /* 中断不是"网络抖了"，标出来，重试循环看到它就直接收手 */
+      if (e && e.name === 'AbortError') err.aborted = true;
       throw err;
     }
     global.clearTimeout(timer);
@@ -688,6 +690,15 @@
       var he = new Error(describeHttpError(res.status, text, cfg.model));
       he.kind = 'http';
       he.status = res.status;
+      /* 429 限流和 5xx 值得再试 —— 免费档 NAI 最常见的失败就是 429。
+         其余 4xx（密钥错、模型名错、参数不合法）再试多少次都一样。 */
+      if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
+        he.retryable = true;
+        var ra = 0;
+        try { ra = Number(res.headers && res.headers.get && res.headers.get('retry-after')); }
+        catch (e3) {}
+        if (isFinite(ra) && ra > 0) he.retryAfterMs = Math.min(ra * 1000, 60000);
+      }
       /* 401/402/400 重试没有意义，标出来让重试层跳过 */
       he.retryable = (res.status === 429 || res.status >= 500);
       throw he;
@@ -747,9 +758,12 @@
         return await fn(cfg, req);
       } catch (e) {
         last = e;
+        /* 玩家点了「停」/ 新一轮掐掉旧一轮时，别再退避一秒去发一个注定失败的请求 */
+        if (e.aborted || (req && req.signal && req.signal.aborted)) break;
         var worth = e.kind === 'network' || e.retryable;
         if (!worth || i === tries) break;
-        await sleep(1000 * Math.pow(3, i));
+        await sleep(e.retryAfterMs > 0 ? e.retryAfterMs
+                                       : Math.min(1000 * Math.pow(3, i), 60000));
       }
     }
     throw last;

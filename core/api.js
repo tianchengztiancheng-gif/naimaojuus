@@ -178,7 +178,24 @@
     else if (res.status === 404) hint = '（地址不对，检查是否要去掉或补上 /v1）';
     else if (res.status === 429) hint = '（触发限流，等一会儿再试）';
     else if (res.status >= 500) hint = '（上游服务器出错，不是你的问题）';
-    return new Error('HTTP ' + res.status + ' ' + hint + '\n' + String(detail).slice(0, 400));
+    var err = new Error('HTTP ' + res.status + ' ' + hint + '\n' + String(detail).slice(0, 400));
+    /* 把状态码和 Retry-After 挂到错误对象上 —— 重试逻辑要用。
+       以前只有一段人读的文案，429 被识别出来了却不重试，反而叫玩家"等一会儿再试"。 */
+    err.status = res.status;
+    err.retryAfterMs = parseRetryAfter(res);
+    return err;
+  }
+
+  /** 解析 Retry-After：可能是秒数，也可能是 HTTP 日期 */
+  function parseRetryAfter(res) {
+    var raw = '';
+    try { raw = res.headers && res.headers.get && res.headers.get('retry-after'); } catch (e) {}
+    if (!raw) return 0;
+    var secs = Number(raw);
+    if (isFinite(secs) && secs >= 0) return Math.min(secs * 1000, RETRY_CAP);
+    var at = Date.parse(raw);
+    if (!isNaN(at)) return Math.max(0, Math.min(at - Date.now(), RETRY_CAP));
+    return 0;
   }
 
   /**
@@ -260,13 +277,34 @@
     return full;
   }
 
-  /** 判断是不是"再试一次也许就好"的故障 */
-  function isTransient(e) {
+  /* 退避上限。服务端偶尔会给出几十分钟的 Retry-After，不封顶的话界面就卡死了。 */
+  var RETRY_CAP = 60000;
+
+  /** 这些错再试多少次都一样，别浪费两次重试和玩家的时间 */
+  function isFatal(e) {
+    var st = e && e.status;
+    if (st === 400 || st === 401 || st === 403 || st === 404 || st === 422) return true;
     var m = String((e && e.message) || e).toLowerCase();
-    return /network error|failed to fetch|error reading a body|connection|reset|eof|502|503|504|500|timeout|超时/.test(m);
+    return /没填密钥|没填模型名|model.*(not found|does not exist)|invalid api key/.test(m);
   }
 
-  /** 带重试的 chat。瞬时断连重试 2 次，退避 1s / 3s。 */
+  /** 判断是不是"再试一次也许就好"的故障 */
+  function isTransient(e) {
+    if (isFatal(e)) return false;
+    /* 429 = 限流。这才是最该重试的一类，以前反而漏了。 */
+    if (e && (e.status === 429 || (e.status >= 500 && e.status < 600))) return true;
+    var m = String((e && e.message) || e).toLowerCase();
+    return /network error|failed to fetch|error reading a body|connection|reset|eof|502|503|504|500|timeout|超时|rate.?limit|too many requests|429/.test(m);
+  }
+
+  /** 这一次该等多久：服务端给了 Retry-After 就听它的，否则指数退避 */
+  function backoffMs(e, attempt) {
+    if (e && e.retryAfterMs > 0) return Math.min(e.retryAfterMs, RETRY_CAP);
+    return Math.min(1000 * Math.pow(3, attempt), RETRY_CAP);   // 1s, 3s, 9s…
+  }
+
+  /** 带重试的 chat。瞬时断连与限流重试 2 次；
+      退避优先听服务端的 Retry-After，否则 1s / 3s，最多 60s。 */
   async function chatWithRetry(messages, opt) {
     opt = opt || {};
     var tries = opt.retries == null ? 2 : opt.retries;
@@ -278,8 +316,9 @@
         lastErr = e;
         if (opt.signal && opt.signal.aborted) throw e;
         if (i >= tries || !isTransient(e)) throw e;
-        if (opt.onRetry) opt.onRetry(i + 1, tries, e);
-        await new Promise(function (r) { setTimeout(r, i === 0 ? 1000 : 3000); });
+        var wait = backoffMs(e, i);
+        if (opt.onRetry) opt.onRetry(i + 1, tries, e, wait);
+        await new Promise(function (r) { setTimeout(r, wait); });
       }
     }
     throw lastErr;
@@ -319,6 +358,7 @@
   global.GalAPI = {
     DEFAULTS: DEFAULTS, loadConfig: loadConfig, saveConfig: saveConfig,
     endpoint: endpoint, chat: chat, chatWithRetry: chatWithRetry,
-    isTransient: isTransient, test: test, listModels: listModels
+    isTransient: isTransient, isFatal: isFatal, backoffMs: backoffMs,
+    test: test, listModels: listModels
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1100,6 +1100,20 @@
   /* ============================================================
      一轮对话
      ============================================================ */
+  /* ============================================================
+     输入法组合态
+     ============================================================ */
+  /**
+   * 拼音/日文输入法选词时按回车，是在**确认候选词**，不是在发送。
+   * 不判这个的话，打「你好」按空格选词、再按回车，会把半截内容直接发出去。
+   *
+   * e.isComposing 是标准字段；keyCode 229 是旧浏览器（以及部分安卓输入法）
+   * 在组合态下统一上报的值，一并兜住。
+   */
+  function composing(e) {
+    return !!(e && (e.isComposing || e.keyCode === 229));
+  }
+
   async function submit(userText) {
     if (busy) return;
     var input = $('usertext');
@@ -1145,6 +1159,14 @@
                                   '可以直接再发一次试试。' : '');
       $('dialogue').hidden = false;
       hintEl.classList.remove('on');
+      /* 把刚才那句还回输入框 —— 输入框是在发请求**之前**清空的，
+         网络一抖或者点了中断，玩家写的两百字就没了。
+         只在输入框还空着时还原，免得盖掉他这段时间里新写的东西。 */
+      if (!input.value) {
+        input.value = userText;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+      }
     } finally {
       busy = false;
       abortCtl = null;
@@ -1804,7 +1826,10 @@
       chatTurn(txt, 'text');
     }
     if (snd) snd.onclick = sendFromPhone;
-    if (cin) cin.onkeydown = function (e) { if (e.key === 'Enter') sendFromPhone(); };
+    if (cin) cin.onkeydown = function (e) {
+      if (composing(e)) return;                 // 正在选词，这个回车是确认候选
+      if (e.key === 'Enter') sendFromPhone();
+    };
 
     /* 表情包 */
     var eb = P('.eb'), sp = P('.sp');
@@ -2299,7 +2324,10 @@
     var ci = P('.cmtin'), cs = P('.cmtsend');
     if (ci) ci.value = '';
     if (cs) cs.onclick = sendComment;
-    if (ci) ci.onkeydown = function (e) { if (e.key === 'Enter') sendComment(); };
+    if (ci) ci.onkeydown = function (e) {
+      if (composing(e)) return;
+      if (e.key === 'Enter') sendComment();
+    };
   }
 
   /* 评论 = 推进一轮剧情：模型看到你在谁的帖子下说了什么，会照世界书格式回 [评论|…] */
@@ -3393,6 +3421,7 @@
   $('dialogue').onclick = advance;
   $('send').onclick = function () { submit(); };
   $('usertext').addEventListener('keydown', function (e) {
+    if (composing(e)) return;                   // 正在选词，别把半截内容发出去
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
   document.addEventListener('keydown', function (e) {

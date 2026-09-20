@@ -43,7 +43,7 @@ if (!HAVE_REAL_RES) console.log('（未找到真素材表，改用 test/fixtures
 const FILES = [
   ...(HAVE_REAL_RES ? REAL_RES : ['test/fixtures/resource.js']),
   'resource/aliases.js',
-  'core/cardres.js', 'core/tokens.js', 'core/vector.js',
+  'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/prompt.js', 'core/script.js',
   'core/phone.js', 'core/engine.js', 'core/api.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
@@ -111,7 +111,7 @@ console.log('\n[1c] 通讯录剔除名单');
 console.log('\n[2] 全局对象');
 ['RESOURCE', 'Resolver', 'Worldbook', 'PromptBuilder', 'ScriptParser',
  'Phone', 'Engine', 'GalAPI', 'GalStore', 'PHONE_RES', 'SCENE_ALIASES', 'Editors',
- 'Tokens', 'Vector', 'ImageGen', 'Snapshot', 'Gallery', 'CG', 'CardRes']
+ 'Tokens', 'Vector', 'ImageGen', 'Snapshot', 'Gallery', 'CG', 'CardRes', 'GalCrash']
   .forEach(n => ok(n, typeof w[n] !== 'undefined'));
 
 function run(fn, label) {
@@ -1069,6 +1069,58 @@ console.log('\n[6w5] 自查修掉的五条（别再回退）');
     const uids = E.pool.map(x => x.uid);
     ok('全部 uid 唯一', new Set(uids).size === uids.length, uids.join(' | '));
     ok('导入的带来源前缀', uids.some(u => /^wi1:/.test(u)) && uids.some(u => /^wi2:/.test(u)));
+  }
+}
+
+console.log('\n[6w6] 四条小修（错误兜底 / 输入法 / 保住文字 / 限流重试）');
+{
+  const srcApp = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  const srcApi = fs.readFileSync(path.join(ROOT, 'core/api.js'), 'utf8');
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+
+  /* ① 全局错误兜底 */
+  ok('crash.js 是第一个加载的脚本',
+     /<script src="core\/crash\.js">/.test(html) &&
+     html.indexOf('core/crash.js') < html.indexOf('core/cardres.js'));
+  ok('GalCrash 挂上了', typeof w.GalCrash === 'object');
+  ok('能主动上报', (function () {
+    w.GalCrash.report('冒烟测试上报', new Error('测试'));
+    return w.GalCrash.log().some(function (r) { return /冒烟测试上报/.test(r.msg); });
+  })());
+  ok('兜底页渲染出了导出存档按钮', !!d.getElementById('cr-save'));
+  ok('导出的备份不含密钥（键名过滤）',
+     /key\|token\|secret/.test(fs.readFileSync(path.join(ROOT, 'core/crash.js'), 'utf8')));
+
+  /* ② 输入法组合态 */
+  ok('有 composing() 判据', /function composing\(e\)/.test(srcApp));
+  ok('三处 Enter 都判了组合态',
+     (srcApp.match(/if \(composing\(e\)\) return/g) || []).length >= 3,
+     (srcApp.match(/if \(composing\(e\)\) return/g) || []).length + ' 处');
+  ok('keyCode 229 也兜住（旧浏览器/部分安卓输入法）', /keyCode === 229/.test(srcApp));
+
+  /* ③ 失败时把文字还回输入框 */
+  ok('catch 里还原输入框', /if \(!input\.value\) \{[\s\S]{0,80}input\.value = userText/.test(srcApp));
+
+  /* ④ 限流重试 */
+  ok('429 算可重试', w.GalAPI.isTransient({ status: 429 }) === true);
+  ok('503 算可重试', w.GalAPI.isTransient({ status: 503 }) === true);
+  ok('401 不重试', w.GalAPI.isTransient({ status: 401 }) === false);
+  ok('404 不重试', w.GalAPI.isTransient({ status: 404 }) === false);
+  ok('「没填密钥」不重试', w.GalAPI.isTransient(new Error('没填密钥')) === false);
+  ok('网络错仍然重试', w.GalAPI.isTransient(new Error('Failed to fetch')) === true);
+  ok('退避听服务端的 Retry-After',
+     w.GalAPI.backoffMs({ status: 429, retryAfterMs: 5000 }, 0) === 5000);
+  ok('退避封顶 60 秒',
+     w.GalAPI.backoffMs({ status: 429, retryAfterMs: 9999999 }, 0) === 60000);
+  ok('没有 Retry-After 时指数退避',
+     [0, 1, 2].map(function (i) { return w.GalAPI.backoffMs({ status: 429 }, i); })
+       .join() === '1000,3000,9000');
+  ok('readError 会把状态码挂到错误上', /err\.status = res\.status/.test(srcApi));
+  ok('Retry-After 支持秒数与 HTTP 日期', /Date\.parse\(raw\)/.test(srcApi));
+  {
+    const ig = fs.readFileSync(path.join(ROOT, 'core/imagegen.js'), 'utf8');
+    ok('出图的 429 也重试', /res\.status === 429/.test(ig));
+    ok('出图被中断后不再退避重发', /e\.aborted \|\|/.test(ig));
   }
 }
 

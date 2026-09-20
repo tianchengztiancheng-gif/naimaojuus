@@ -712,3 +712,39 @@ aside .x{background:none;border:0;color:var(--sub);font-size:20px;cursor:pointer
 #boot .boot-art > label{margin-top:16px;padding-top:14px;
   border-top:1px solid rgba(120,200,230,.14)}
 #boot .boot-art .note{margin-top:8px}
+
+/* ===== 崩溃兜底页（core/crash.js） =====
+   要点：不依赖任何变量和其它规则 —— 崩溃时坏掉的可能正是它们。
+   所以这里全写死值，z-index 拉到最高，position:fixed 不受布局影响。 */
+#gal-crash{position:fixed;inset:0;z-index:2147483600;overflow-y:auto;
+  background:rgba(6,10,15,.92);backdrop-filter:blur(6px);
+  display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;
+  font:14px/1.7 'PingFang SC','Microsoft YaHei','Noto Sans SC',system-ui,sans-serif;
+  color:#e6f2f8}
+#gal-crash[hidden]{display:none}
+#gal-crash .cr-card{width:100%;max-width:760px;background:#131d27;
+  border:1px solid rgba(255,140,140,.34);border-radius:14px;padding:22px 24px 18px;
+  box-shadow:0 18px 60px rgba(0,0,0,.55)}
+#gal-crash .cr-title{font-size:19px;font-weight:700;color:#ff9a9a;letter-spacing:.06em}
+#gal-crash .cr-lead{margin:8px 0 16px;color:#9fc0d2;font-size:13px}
+#gal-crash .cr-lead b{color:#e6f2f8}
+#gal-crash .cr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+#gal-crash button{font:inherit;font-size:13px;cursor:pointer;border-radius:9px;
+  padding:8px 15px;border:1px solid rgba(120,200,230,.4);
+  background:rgba(120,200,230,.14);color:#cfe8f5;transition:background .16s}
+#gal-crash button:hover{background:rgba(120,200,230,.24)}
+#gal-crash #cr-save{border-color:rgba(126,227,184,.55);background:rgba(126,227,184,.16);
+  color:#a9f0cf;font-weight:600}
+#gal-crash button.ghost{background:none;border-color:rgba(255,255,255,.14);color:#7f9bad}
+#gal-crash .cr-note{font-size:12px;color:#7ee3b8;min-height:16px;margin-bottom:8px}
+#gal-crash .cr-list{max-height:46vh;overflow-y:auto;margin-top:4px}
+#gal-crash .cr-item{border-top:1px solid rgba(255,255,255,.08);padding:11px 0}
+#gal-crash .cr-h{font-size:11px;letter-spacing:.14em;color:#ff9a9a}
+#gal-crash .cr-h i{font-style:normal;color:#7f9bad}
+#gal-crash .cr-m{font-size:13.5px;margin-top:3px;word-break:break-word}
+#gal-crash .cr-x{font-size:11.5px;color:#7f9bad;margin-top:2px;word-break:break-all}
+#gal-crash .cr-s{margin-top:7px;padding:9px 11px;border-radius:8px;
+  background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.07);
+  font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:#9fc0d2;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}
+#gal-crash .cr-foot{margin-top:12px;font-size:11.5px;color:#6f90a6}
