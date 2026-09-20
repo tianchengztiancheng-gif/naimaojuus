@@ -119,9 +119,25 @@
     return new Promise(function (res) {
       var img = rec.back.querySelector('img'), settled = false;
       var lay = rec.back, triedFallback = false;
-      var timer = setTimeout(reveal, 1500);
+      /* 换图令牌。1.5 秒内同一角色换两次时，两次 swap 操作的是**同一个 <img>**，
+         后一次会把前一次的 onload 覆盖掉 —— 于是前一次永远 settle 不了，
+         它那个 1500ms 兜底定时器照常到点，把旧立绘重新推回前台，
+         而 rec.url 已经是新图，applyStage 不会再换，画面就一直错着。
+         实测：换图后 1.7 秒前台从 B 翻回了 A。所以后来者必须让前面的作废。 */
+      var token = (rec.swapToken = (rec.swapToken || 0) + 1);
+      var dead = function () { return rec.swapToken !== token; };
+      var timer = setTimeout(function () { reveal(); }, 1500);
+      /* 被取代时**也要 resolve**，只是不碰画面 ——
+         applyStage 是 Promise.all(jobs)，漏一个不 resolve 就整体挂住。 */
+      function giveUp() {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
+        img.onload = img.onerror = null;
+        res();
+      }
       function reveal() {
         if (settled) return;
+        if (dead()) return giveUp();
         settled = true; clearTimeout(timer);
         rec.back.classList.add('show');
         rec.front.classList.remove('show');
@@ -130,11 +146,13 @@
         res();
       }
       function ready() {
+        if (dead()) return giveUp();        // 已被后来的 swap 取代，别再动画面
         img.onload = img.onerror = null;
         lay.style.visibility = '';
         img.decode ? img.decode().then(reveal).catch(reveal) : reveal();
       }
       function failed() {
+        if (dead()) return giveUp();
         noteImgFail(rec.name, img.getAttribute('src'));
         /* 先退原皮 */
         if (!triedFallback && fallbackUrl && fallbackUrl !== url) {
@@ -1254,8 +1272,18 @@
   /* 手机消息的排序用单调递增的序号。
      原来用 eng.history.length —— 但私聊是独立生成、不写主线历史，
      所以连发两条时两条的 turn 完全一样，排序就乱了：
-     你的第二句会跟第一句挤在一起，回复全堆到后面。 */
-  function nextSeq() { return ++eng.phoneSeq; }
+     你的第二句会跟第一句挤在一起，回复全堆到后面。
+
+     ⚠ 但只用 ++phoneSeq 又错得更离谱：剧情里的 [短信|…] 用的 turn 是
+     **history 数组下标**（玩几十轮就是几十上百），而 phoneSeq 从 1 开始。
+     两套编号混在一起排序，手机侧消息**永远排在剧情侧短信前面**。
+     实测第 40 轮时她发来「晚上有空吗」(turn=39)，你回的「有空啊」(turn=1)
+     排在她前面。
+
+     所以现在回到同一个坐标系：整数部分 = 当前 history 长度（保证排在
+     已有剧情消息之后），小数部分 = 单调递增的 seq（保证同一时刻连发的
+     几条之间有稳定先后）。1e6 的分母足够大，几十万条手机消息才会进位。 */
+  function nextSeq() { return eng.history.length + (++eng.phoneSeq) / 1e6; }
 
   /** me=true 表示这条是玩家自己发的 */
   function pushSent(group, who, type, v, me) {
@@ -3331,6 +3359,7 @@
     eng.history = [];
     eng.log = [];
     eng.phoneSent = [];
+    eng.phoneSeq = 0;        // 忘了清它，新周目的手机消息会接着上一局的编号往上加
     if (pick) eng.seedVarsFromOpening(pick.t);   // 开局先把地点/时段/在场角色填好
     enterGame();
     if (pick) {

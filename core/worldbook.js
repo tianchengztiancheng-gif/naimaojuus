@@ -195,17 +195,23 @@
   }
 
   /** 从角色卡 / 世界书 JSON 里取出条目池 */
-  function fromCard(card) {
+  function fromCard(card, opt) {
     var d = (card && card.data) || card || {};
     var book = d.character_book || card.character_book;
     var entries = (book && book.entries) || [];
     if (!Array.isArray(entries) && typeof entries === 'object') {
       entries = Object.keys(entries).map(function (k) { return entries[k]; });
     }
+    /* uid 前缀：额外导入的世界书（独立 World Info JSON）和卡内条目
+       各自从 0 开始编号，不加前缀就会撞车 —— 实测 uid 变成 0,1,0,1，
+       findEntry(1) 永远命中卡内那条，于是在界面上点导入的条目、
+       改它的开关，操作全打到卡里另一条上去了。Vector 的索引也按 uid 存，
+       同样互相覆盖。 */
+    var pfx = (opt && opt.uidPrefix) || '';
     return entries.map(function (e, i) {
       var ext = e.extensions || {};
       return {
-        uid: e.id != null ? e.id : i,
+        uid: pfx + (e.id != null ? e.id : (e.uid != null ? e.uid : i)),
         comment: e.comment || e.name || '',
         content: e.content || '',
         key: e.keys || e.key || [],

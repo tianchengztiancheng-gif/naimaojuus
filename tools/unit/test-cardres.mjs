@@ -95,15 +95,26 @@ ok('不会把 MY_EXPRESSION_MAP 当成 EXPRESSION_MAP',
 
 /* ---------- [2] 放宽成 JSON ---------- */
 console.log('\n[2] 非严格 JSON 的放宽');
-const relaxed = JSON.parse(C._relax("{ a: 1, 'b': 'x', /* 注释 */ c: [1,2,], }"));
-ok('裸键补引号', relaxed.a === 1);
-ok('单引号转双引号', relaxed.b === 'x');
-ok('去掉注释与尾逗号', Array.isArray(relaxed.c) && relaxed.c.length === 2);
+const relaxed = C._parseLiteral("{ a: 1, 'b': 'x', /* 注释 */ c: [1,2,], }");
+ok('裸键', relaxed.a === 1);
+ok('单引号', relaxed.b === 'x');
+ok('注释与尾逗号', Array.isArray(relaxed.c) && relaxed.c.length === 2);
+ok('转义序列', C._parseLiteral(String.raw`{"a":"x\ny\u0041"}`).a === 'x\nyA');
+ok('负数与科学计数', C._parseLiteral('[-1, 1e3, .5]').join() === '-1,1000,0.5');
+ok('嵌套深一点也行', C._parseLiteral('{a:{b:[{c:1}]}}').a.b[0].c === 1);
 ok('严格 JSON 原样通过', C._parseLiteral('{"a":1}').a === 1);
-ok('引用了别的变量时靠 deps 求值',
-   C._parseLiteral('{"m": F["重樱"]}', { F: "{'重樱':['柴郡']}" }).m[0] === '柴郡');
-ok('关掉 evalFallback 后引用型字面量返回 null',
-   C._parseLiteral('{"m": F["重樱"]}', { F: "{'重樱':['柴郡']}" }, false) === null);
+ok('引用另一个已解析的变量（取值，不求值）',
+   C._parseLiteral('{"m": F["重樱"]}', { F: { '重樱': ['柴郡'] } }).m[0] === '柴郡');
+ok('点号取值也认', C._parseLiteral('{"m": F.重樱[0]}', { F: { '重樱': ['柴郡'] } }).m === '柴郡');
+/* ⚠ 安全边界：任何函数调用都必须被拒绝，绝不能求值 */
+ok('函数调用被拒绝（不执行卡里的代码）',
+   C._parseLiteral('{"m": fetch("https://evil/")}') === null);
+ok('逗号表达式被拒绝',
+   C._parseLiteral('{"a": (sideEffect(), 1)}') === null);
+ok('IIFE 被拒绝',
+   C._parseLiteral('[ (function(){return 1})() ]') === null);
+ok('认不出的标识符被拒绝', C._parseLiteral('{"a": window}') === null);
+ok('deps 上也不能调用', C._parseLiteral('{"a": F()}', { F: function(){ return 1; } }) === null);
 
 /* ---------- [3] 归一化 ---------- */
 console.log('\n[3] 归一化');

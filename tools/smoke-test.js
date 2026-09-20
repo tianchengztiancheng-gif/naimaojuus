@@ -1000,6 +1000,78 @@ console.log('\n[6w4] 存档槽：每个周目各存各的');
      /img\.complete && img\.naturalWidth > 0/.test(src));
 }
 
+console.log('\n[6w5] 自查修掉的五条（别再回退）');
+{
+  const srcApp = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  const srcCard = fs.readFileSync(path.join(ROOT, 'core/cardres.js'), 'utf8');
+
+  /* ① 安全：解析角色卡绝不能执行卡里的代码 */
+  ok('cardres 里没有 new Function / eval',
+     !/new\s+Function|(^|[^.\w])eval\s*\(/.test(srcCard.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('函数调用被解析器拒绝',
+     w.CardRes._parseLiteral('{"m": fetch("https://evil/")}') === null);
+  ok('逗号表达式被拒绝', w.CardRes._parseLiteral('{"a": (f(), 1)}') === null);
+  ok('认不出的标识符被拒绝', w.CardRes._parseLiteral('{"a": localStorage}') === null);
+  ok('正常的卡照常解析', w.CardRes._parseLiteral("{ a: 'x', /*注释*/ b: [1,2,], }").a === 'x');
+  {
+    /* 端到端：一张带副作用的卡，载进去不能有任何东西被执行 */
+    let fired = false;
+    w.__evilProbe = function () { fired = true; return {}; };
+    const EVIL = 'var EXPRESSION_MAP = { "A": (__evilProbe(), { "常服": { "微笑": "u.png" } }) };';
+    new w.Engine().loadCard({ data: { extensions: {
+      regex_scripts: [{ scriptName: 'gal MVU', replaceString: EVIL }] } } });
+    ok('载入带副作用的卡，副作用没有发生', fired === false);
+  }
+
+  /* ② 立绘换图并发 */
+  ok('swap 有换图令牌', /rec\.swapToken/.test(srcApp));
+  ok('被取代的 swap 仍然 resolve（否则 Promise.all 挂住）', /function giveUp/.test(srcApp));
+  ok('兜底定时器也受令牌管', /if \(dead\(\)\) return giveUp\(\)/.test(srcApp));
+
+  /* ③ 设置页 padding 不能再被 #jup-root * 压掉 */
+  {
+    const css = fs.readFileSync(path.join(ROOT, 'app/editor-theme.css'), 'utf8')
+                  .replace(/\/\*[\s\S]*?\*\//g, '');
+    const bad = [];
+    css.replace(/([^{}]+)\{([^{}]*)\}/g, function (_, sel, body) {
+      const s2 = sel.trim();
+      if (s2 && !s2.startsWith('@') && s2.includes('.kt') &&
+          !s2.includes('#jup-root') && /(^|[;\s])padding/.test(body)) bad.push(s2.slice(0, 40));
+      return '';
+    });
+    ok('每条带 padding 的 .kt 规则都提了权', bad.length === 0,
+       bad.length ? '漏了：' + bad.join(' | ') : '');
+  }
+
+  /* ④ 手机消息和剧情短信在同一个坐标系 */
+  ok('nextSeq 以 history 长度为整数部分',
+     /eng\.history\.length \+ \(\+\+eng\.phoneSeq\)/.test(srcApp));
+  ok('新周目会清掉 phoneSeq', /eng\.phoneSeq = 0/.test(srcApp));
+  {
+    const E = new w.Engine();
+    for (let i = 0; i < 39; i++) E.history.push({ role: 'assistant', content: '普通。|旁白|-|' });
+    E.history.push({ role: 'assistant', content: '[短信|柴郡|文字|晚上有空吗？]' });
+    const seq = () => E.history.length + (++E.phoneSeq) / 1e6;
+    const sent = [{ who: '柴郡', type: 'text', v: '有空啊', me: true, turn: seq() }];
+    const r = w.Phone.scan(E.history, sent, { userName: '指挥官' });
+    const list = (r.chats['柴郡'] || []).map(m => m.v || m.text);
+    ok('她先说、玩家后回，顺序正确', list[0] === '晚上有空吗？' && list[1] === '有空啊',
+       JSON.stringify(list));
+  }
+
+  /* ⑤ 额外世界书 uid 不撞车 */
+  {
+    const E = new w.Engine();
+    E.loadCard({ data: { character_book: { entries: [
+      { keys: ['a'], content: '卡0' }, { keys: ['b'], content: '卡1' }] } } });
+    E.addWorldbook({ entries: [{ keys: ['c'], content: '外0' }, { keys: ['d'], content: '外1' }] });
+    E.addWorldbook({ entries: [{ keys: ['e'], content: '再0' }] });
+    const uids = E.pool.map(x => x.uid);
+    ok('全部 uid 唯一', new Set(uids).size === uids.length, uids.join(' | '));
+    ok('导入的带来源前缀', uids.some(u => /^wi1:/.test(u)) && uids.some(u => /^wi2:/.test(u)));
+  }
+}
+
 console.log('\n[6x] token 计数');
 ok('默认是粗估', w.Tokens.mode('gpt-4') === 'rough');
 ok('粗估仍返回数字', typeof w.Tokens.count('你好世界', 'gpt-4') === 'number');

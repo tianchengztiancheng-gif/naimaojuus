@@ -115,7 +115,11 @@
     var entries = wi && (wi.entries || wi);
     var list = Array.isArray(entries) ? entries
              : Object.keys(entries || {}).map(function (k) { return entries[k]; });
-    var add = global.Worldbook.fromCard({ data: { character_book: { entries: list } } });
+    /* 每次导入给一个唯一前缀，避免和卡内条目（以及上一次导入的）uid 撞车 */
+    this._wiSeq = (this._wiSeq || 0) + 1;
+    var add = global.Worldbook.fromCard(
+      { data: { character_book: { entries: list } } },
+      { uidPrefix: 'wi' + this._wiSeq + ':' });
     this.pool = this.pool.concat(add);
     return add.length;
   };

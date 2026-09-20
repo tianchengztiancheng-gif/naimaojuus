@@ -1,3 +1,19 @@
+/* ⚠ 选择器为什么都写了两遍（`#jup-root .kt-x, .kt-x`）
+ *
+ * 手机壳的 CSS 里有一条 `#jup-root *{margin:0;padding:0}`。它是 **ID 特异性
+ * (1,0,0)**，普通类选择器 (0,1,0) 一律压不过 —— 设置页搬进手机之后，
+ * 下面每一条 padding 都会被它清零，正文、按钮、输入框、表格全贴到边上。
+ *
+ * 这个坑踩过两次：第一次只给 .kt-nav 提了权，以为修好了，其实正文和按钮
+ * 还全是 0（真浏览器量出来 padding: 0px）。所以现在的规矩是：**凡是带
+ * padding 的 .kt 规则，选择器一律同时写 `#jup-root ` 前缀版和原版** ——
+ * 前缀版 (1,1,0) 在手机里赢过重置，原版保证设置页单独用时也正常。
+ *
+ * 新增带 padding 的规则时必须照这个写法，否则又会贴边。
+ * 重置那条在 app/phone-inner.css，以及卡自带的 resource/juus/phone.css 里
+ * 各有一份；后者不在仓库内、改不了，所以只能从这边提权。
+ */
+
 /* ============================================================
  * app/editor-theme.css —— 「设置」工作台
  *
@@ -5,10 +21,10 @@
  *   左侧分区导航 · 中间列表 · 右侧编辑器
  * 配色改成碧蓝。不用 clip-path 切角 —— 小卡片上会啃出豁口。
  * ============================================================ */
-#boot.kt{padding:0!important;display:block}
+#jup-root #boot.kt, #boot.kt{padding:0!important;display:block}
 /* 注意选择器权重：.ph-layer.app 是两个类，单写 .kt 会被它的浅色渐变压过去，
    整块就会半透明地糊在壁纸上。这里必须至少同权重。 */
-.ph-layer.kt,#boot.kt,.kt{
+#jup-root .ph-layer.kt, #jup-root #boot.kt, #jup-root .kt, .ph-layer.kt, #boot.kt, .kt{
   --bg:9,16,24;          --bg2:15,25,36;        --bg3:20,33,46;
   --txt:226,240,248;     --txt2:146,176,196;    --txt3:104,136,158;
   --acc:96,205,240;      --acc2:56,160,205;
@@ -27,13 +43,13 @@
 
 /* ---------- 三栏骨架 ---------- */
 .kt-shell{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(0,1fr)}
-.kt-nav{display:flex;flex-direction:column;padding:18px 12px 14px;gap:4px;
+#jup-root .kt-nav, .kt-nav{display:flex;flex-direction:column;padding:18px 12px 14px;gap:4px;
   background:rgba(var(--bg),.75);
   border-right:1px solid rgba(var(--acc),.18);overflow-y:auto}
-.kt-brand{font-family:var(--serif);letter-spacing:.3em;font-size:18px;font-weight:600;
+#jup-root .kt-brand, .kt-brand{font-family:var(--serif);letter-spacing:.3em;font-size:18px;font-weight:600;
   color:rgb(var(--acc));padding:6px 12px 18px;display:flex;align-items:center;gap:10px}
 .kt-brand::before{content:'◆';font-size:11px}
-.kt-nav button{display:block;width:100%;text-align:left;background:none;border:0;
+#jup-root .kt-nav button, .kt-nav button{display:block;width:100%;text-align:left;background:none;border:0;
   border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;position:relative;
   transition:background .18s,color .18s;line-height:1.35}
 .kt-nav button b{display:block;font-family:var(--serif);letter-spacing:.14em;
@@ -44,11 +60,11 @@
 .kt-nav button.on b{color:rgb(var(--acc))}
 .kt-nav button.on::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;
   background:rgb(var(--acc));border-radius:2px}
-.kt-ver{margin-top:auto;padding:12px;font-size:10.5px;color:rgba(var(--txt3),.7);
+#jup-root .kt-ver, .kt-ver{margin-top:auto;padding:12px;font-size:10.5px;color:rgba(var(--txt3),.7);
   letter-spacing:.1em}
 
 .kt-main{display:flex;flex-direction:column;min-width:0;min-height:0}
-.kt-head{flex:none;padding:18px 26px 15px;border-bottom:1px solid rgba(var(--acc),.16);
+#jup-root .kt-head, .kt-head{flex:none;padding:18px 26px 15px;border-bottom:1px solid rgba(var(--acc),.16);
   display:flex;align-items:flex-end;gap:16px;background:rgba(var(--bg),.45)}
 .kt-head h2{font-family:var(--serif);letter-spacing:.24em;font-size:20px;font-weight:600;
   color:rgb(var(--txt));margin:0;white-space:nowrap}
@@ -60,15 +76,15 @@
 .kt-split{flex:1;min-width:0;display:grid;grid-template-columns:380px minmax(0,1fr)}
 .kt-pane{display:flex;flex-direction:column;min-width:0;min-height:0}
 .kt-pane + .kt-pane{border-left:1px solid rgba(var(--acc),.14)}
-.kt-pane-hd{flex:none;padding:13px 18px 10px;font-size:12.5px;letter-spacing:.14em;
+#jup-root .kt-pane-hd, .kt-pane-hd{flex:none;padding:13px 18px 10px;font-size:12.5px;letter-spacing:.14em;
   color:rgba(var(--txt3),1);display:flex;align-items:center;gap:9px;
   border-bottom:1px solid rgba(var(--acc),.1)}
 .kt-pane-hd b{color:rgba(var(--acc),.9);font-weight:600}
-.kt-pane-bd{flex:1;min-height:0;overflow-y:auto;padding:0 12px 16px}
-.kt-pane-bd.pad{padding:16px 22px 26px}
+#jup-root .kt-pane-bd, .kt-pane-bd{flex:1;min-height:0;overflow-y:auto;padding:0 12px 16px}
+#jup-root .kt-pane-bd.pad, .kt-pane-bd.pad{padding:16px 22px 26px}
 
 /* ---------- 列表项 ---------- */
-.kt-item{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:10px;
+#jup-root .kt-item, .kt-item{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:10px;
   cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:background .16s}
 .kt-item:hover{background:rgba(var(--acc),.07)}
 .kt-item.on{background:rgba(var(--acc),.14);border-color:rgba(var(--acc),.4)}
@@ -80,13 +96,13 @@
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kt-item.off .kt-i-t,.kt-item.off .kt-i-s{opacity:.42}
 .kt-move{display:flex;flex-direction:column;gap:1px;flex:none}
-.kt-move button{background:none;border:0;color:rgba(var(--acc),.55);cursor:pointer;
+#jup-root .kt-move button, .kt-move button{background:none;border:0;color:rgba(var(--acc),.55);cursor:pointer;
   font-size:10px;line-height:1;padding:1px 3px}
 .kt-move button:hover{color:rgb(var(--acc))}
 
 /* ---------- 分组 ---------- */
 .kt-group{margin-bottom:6px}
-.kt-ghead{display:flex;align-items:center;gap:9px;cursor:pointer;padding:12px 10px 8px;
+#jup-root .kt-ghead, .kt-ghead{display:flex;align-items:center;gap:9px;cursor:pointer;padding:12px 10px 8px;
   font-size:12.5px;letter-spacing:.18em;color:rgba(var(--acc),.9);user-select:none;font-weight:600}
 .kt-ghead .arw{font-size:9px;transition:transform .18s}
 .kt-group.open .kt-ghead .arw{transform:rotate(90deg)}
@@ -95,7 +111,7 @@
 .kt-group.open .kt-gbody{display:block}
 
 /* ---------- 标签 ---------- */
-.kt .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;
+#jup-root .kt .tag, .kt .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;
   font-style:normal;font-weight:600;letter-spacing:.04em;flex:none}
 .kt .tag.blue{background:rgba(var(--acc),.16);color:rgb(var(--acc))}
 .kt .tag.green{background:rgba(var(--ok),.16);color:rgb(var(--ok))}
@@ -118,8 +134,7 @@
 .kt-field > label,.kt-label{display:block;font-size:13.5px;font-weight:600;
   color:rgba(var(--txt2),1);margin-bottom:7px;letter-spacing:.06em}
 .kt-hint{font-size:12.5px;color:rgba(var(--txt3),1);margin-top:6px;line-height:1.7}
-.kt input[type=text],.kt input[type=number],.kt input[type=password],
-.kt select,.kt textarea{
+#jup-root .kt input[type=text], #jup-root .kt input[type=number], #jup-root .kt input[type=password], #jup-root .kt select, #jup-root .kt textarea, .kt input[type=text], .kt input[type=number], .kt input[type=password], .kt select, .kt textarea{
   display:block;width:100%;background:rgba(var(--bg),.7);color:rgb(var(--txt));
   border:1px solid rgba(var(--acc),.2);border-radius:8px;
   padding:10px 13px;font:inherit;font-size:14px;line-height:1.6;
@@ -129,11 +144,11 @@
 .kt input:focus,.kt select:focus,.kt textarea:focus{outline:none;
   border-color:rgba(var(--acc),.7);background:rgba(var(--bg3),.8);
   box-shadow:0 0 0 3px rgba(var(--acc),.12)}
-.kt select{color-scheme:dark;appearance:none;-webkit-appearance:none;padding-right:30px;
+#jup-root .kt select, .kt select{color-scheme:dark;appearance:none;-webkit-appearance:none;padding-right:30px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='rgba(146,176,196,0.8)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 11px center}
 .kt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
-.kt-row{display:flex;align-items:center;gap:12px;padding:9px 0;
+#jup-root .kt-row, .kt-row{display:flex;align-items:center;gap:12px;padding:9px 0;
   border-bottom:1px solid rgba(var(--acc),.08)}
 .kt-row:last-child{border-bottom:0}
 .kt-row .kt-label{margin:0;flex:1}
@@ -147,7 +162,7 @@
   background:linear-gradient(90deg,rgba(var(--acc),.3),transparent)}
 
 /* ---------- 按钮 ---------- */
-.kt-btn{background:rgba(var(--acc),.12);color:rgb(var(--acc));
+#jup-root .kt-btn, .kt-btn{background:rgba(var(--acc),.12);color:rgb(var(--acc));
   border:1px solid rgba(var(--acc),.42);border-radius:9px;
   padding:8px 16px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;
   letter-spacing:.06em;transition:background .18s,border-color .18s,transform .14s}
@@ -159,25 +174,25 @@
 .kt-btn-danger{background:rgba(var(--danger),.1);color:rgb(var(--danger));
   border-color:rgba(var(--danger),.38)}
 .kt-btn-danger:hover{background:rgba(var(--danger),.2);border-color:rgba(var(--danger),.7)}
-.kt-btn-wide{width:100%;padding:11px;font-size:13px;margin-top:6px}
+#jup-root .kt-btn-wide, .kt-btn-wide{width:100%;padding:11px;font-size:13px;margin-top:6px}
 
 /* ---------- 统计条 ---------- */
-.kt-stat{background:rgba(var(--acc),.08);border:1px solid rgba(var(--acc),.2);
+#jup-root .kt-stat, .kt-stat{background:rgba(var(--acc),.08);border:1px solid rgba(var(--acc),.2);
   border-radius:10px;padding:11px 16px;font-size:13px;color:rgba(var(--txt2),1);
   margin:0 0 12px;line-height:1.8}
 .kt-stat b{color:rgb(var(--acc));font-weight:600}
 
 /* ---------- 空态 ---------- */
-.kt-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+#jup-root .kt-empty, .kt-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
   height:100%;gap:8px;color:rgba(var(--txt3),.85);font-size:12.5px;text-align:center;padding:30px}
 .kt-empty .ic{font-size:30px;opacity:.5}
 
 /* ---------- 表格 / 代码 ---------- */
 .kt table{width:100%;border-collapse:collapse;font-size:13px}
-.kt th,.kt td{padding:8px 11px;border-bottom:1px solid rgba(var(--acc),.1);
+#jup-root .kt th, #jup-root .kt td, .kt th, .kt td{padding:8px 11px;border-bottom:1px solid rgba(var(--acc),.1);
   text-align:left;vertical-align:top}
 .kt th{color:rgba(var(--txt3),.95);font-weight:500}
-.kt pre{background:rgba(var(--bg),.8);border:1px solid rgba(var(--acc),.16);
+#jup-root .kt pre, .kt pre{background:rgba(var(--bg),.8);border:1px solid rgba(var(--acc),.16);
   border-radius:8px;padding:11px;font-size:11.5px;line-height:1.7;
   white-space:pre-wrap;word-break:break-word;color:rgba(var(--txt2),.95);
   font-family:ui-monospace,Menlo,Consolas,monospace;max-height:340px;overflow:auto}
@@ -195,10 +210,10 @@
 /* 窄屏：导航收成顶部横条，双栏拆成单栏 */
 @media (max-width:1100px){
   .kt-shell{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
-  .kt-nav{flex-direction:row;overflow-x:auto;border-right:0;
+  #jup-root .kt-nav, .kt-nav{flex-direction:row;overflow-x:auto;border-right:0;
     border-bottom:1px solid rgba(var(--acc),.16);padding:8px;gap:4px}
   .kt-brand,.kt-ver{display:none}
-  .kt-nav button{width:auto;flex:none;padding:7px 13px;border-radius:8px}
+  #jup-root .kt-nav button, .kt-nav button{width:auto;flex:none;padding:7px 13px;border-radius:8px}
   .kt-nav button span{display:none}
   .kt-nav button.on::before{display:none}
   .kt-split{grid-template-columns:1fr}
@@ -231,7 +246,7 @@
 /* ① 统计磁贴 */
 .kt-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
   gap:10px;margin-bottom:16px}
-.kt-tile{position:relative;text-align:left;cursor:pointer;padding:11px 14px;
+#jup-root .kt-tile, .kt-tile{position:relative;text-align:left;cursor:pointer;padding:11px 14px;
   border:1px solid rgba(var(--acc),.2);border-radius:10px;
   background:linear-gradient(135deg,rgba(var(--acc),.08),rgba(var(--bg),.5));
   color:rgba(var(--txt),.9);font:inherit;
@@ -260,7 +275,7 @@
 
 /* ③ 左侧色条信息卡 */
 .kt-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-.kt-card{position:relative;padding:14px 16px 14px 18px;border-radius:10px;
+#jup-root .kt-card, .kt-card{position:relative;padding:14px 16px 14px 18px;border-radius:10px;
   background:linear-gradient(135deg,rgba(var(--bg2),.9),rgba(var(--bg),.75));
   border:1px solid rgba(var(--acc),.16)}
 .kt-card::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;
@@ -272,7 +287,7 @@
 .kt-card .bd.em{color:rgba(var(--txt3),.9);font-style:italic}
 
 /* 头部概览卡（借鉴伙伴页的角色抬头） */
-.kt-hero{display:flex;align-items:flex-start;gap:18px;padding:18px 20px;border-radius:12px;
+#jup-root .kt-hero, .kt-hero{display:flex;align-items:flex-start;gap:18px;padding:18px 20px;border-radius:12px;
   background:linear-gradient(120deg,rgba(var(--acc),.12),rgba(var(--bg2),.9));
   border:1px solid rgba(var(--acc),.24);margin-bottom:18px}
 .kt-hero .av{width:66px;height:66px;border-radius:12px;object-fit:cover;
@@ -281,10 +296,10 @@
 .kt-hero .nm{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.1em;
   display:flex;align-items:center;gap:10px}
 .kt-hero .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.kt-hero .chip{font-size:11.5px;padding:3px 10px;border-radius:6px;
+#jup-root .kt-hero .chip, .kt-hero .chip{font-size:11.5px;padding:3px 10px;border-radius:6px;
   border:1px solid rgba(var(--acc),.28);color:rgba(var(--txt2),1);
   background:rgba(var(--bg),.5)}
-.kt-hero .big{flex:none;text-align:center;padding:8px 16px;border-radius:10px;
+#jup-root .kt-hero .big, .kt-hero .big{flex:none;text-align:center;padding:8px 16px;border-radius:10px;
   border:1px solid rgba(var(--acc),.3);background:rgba(var(--bg),.55)}
 .kt-hero .big b{display:block;font-size:24px;color:rgb(var(--acc));line-height:1.2;
   font-variant-numeric:tabular-nums}
@@ -297,14 +312,14 @@
 
 /* 标签串 */
 .kt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
-.kt-chips .c{font-size:11.5px;padding:2px 9px;border-radius:5px;
+#jup-root .kt-chips .c, .kt-chips .c{font-size:11.5px;padding:2px 9px;border-radius:5px;
   background:rgba(var(--acc),.1);color:rgba(var(--acc),.95);
   border:1px solid rgba(var(--acc),.24)}
 .kt-card.warn-card::before{background:rgba(240,200,110,.8)}
 .kt-card.bad-card::before{background:rgba(236,120,120,.85)}
 .kt-card .av{flex:none}
 /* 存读档列表也用色条卡 */
-.kt .slot{display:flex;justify-content:space-between;align-items:center;gap:12px;
+#jup-root .kt .slot, .kt .slot{display:flex;justify-content:space-between;align-items:center;gap:12px;
   position:relative;padding:13px 16px 13px 18px;border-radius:10px;margin-bottom:10px;
   background:linear-gradient(135deg,rgba(var(--bg2),.9),rgba(var(--bg),.75));
   border:1px solid rgba(var(--acc),.16)}
@@ -312,7 +327,7 @@
   border-radius:0 3px 3px 0;background:rgba(var(--acc),.7)}
 .kt .slot b{font-size:14.5px;color:rgb(var(--txt))}
 .kt .slot .meta{color:rgba(var(--txt3),1);font-size:12px;margin-top:3px}
-.kt .slot button{background:rgba(var(--acc),.1);border:1px solid rgba(var(--acc),.34);
+#jup-root .kt .slot button, .kt .slot button{background:rgba(var(--acc),.1);border:1px solid rgba(var(--acc),.34);
   color:rgb(var(--acc));border-radius:7px;padding:5px 12px;cursor:pointer;
   font:inherit;font-size:12.5px}
 .kt .slot button:hover{background:rgba(var(--acc),.22)}
@@ -322,14 +337,14 @@
 .kt-item.off .kt-i-t{color:rgba(var(--txt2),.62)}
 .kt-item.off .kt-i-s{color:rgba(var(--txt3),.6)}
 .kt-item.off .tag{opacity:.5}
-.kt-item.off::after{content:'关';position:absolute;right:12px;top:50%;
+#jup-root .kt-item.off::after, .kt-item.off::after{content:'关';position:absolute;right:12px;top:50%;
   transform:translateY(-50%);font-size:10.5px;color:rgba(var(--txt3),.75);
   border:1px solid rgba(var(--txt3),.3);border-radius:4px;padding:0 5px}
-.kt-item{position:relative;padding-right:40px}
+#jup-root .kt-item, .kt-item{position:relative;padding-right:40px}
 .kt-item.on::after{color:rgba(var(--acc),.9);border-color:rgba(var(--acc),.4)}
 .kt .vx-av{width:22px;height:22px;border-radius:50%;object-fit:cover;
   object-position:top center;vertical-align:-6px;margin-right:7px}
-.kt .vx-edit{margin-left:auto;padding:3px 11px;font-size:11.5px}
+#jup-root .kt .vx-edit, .kt .vx-edit{margin-left:auto;padding:3px 11px;font-size:11.5px}
 .kt .kt-card h5{display:flex;align-items:center;gap:6px}
 
 
