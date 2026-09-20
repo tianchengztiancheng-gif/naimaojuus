@@ -23,7 +23,11 @@
     historyLimit: 40,
     scriptOrder: 'auto',
     maxStage: 4,          // 同台角色上限
-    randomSkin: true,     // 登场时随机抽一套皮肤（之后整场固定）
+    /* 登场时用哪张皮肤。false = 原皮（数组第 0 张），true = 随机抽一套。
+       默认原皮：卡里那几千个换装 URL 挂在第三方图床上，死链不少，随机抽
+       很容易抽到裂图；而且玩家默认期待看到的就是原皮。想要随机的在
+       设置 · 外观 里开。 */
+    randomSkin: false,
     initialFavor: 80,     // 开局好感度（卡里的规则：新角色默认 80）
     logLimit: 5000        // 日志条数上限，超了从头裁
   };
@@ -197,8 +201,11 @@
   };
 
   /**
-   * 皮肤：角色第一次登场时随机抽一套并记住，之后整场都用这套。
-   * 每句都随机的话画面会一直跳衣服；玩家在皮肤面板里手选后会锁住（locked）。
+   * 皮肤：角色第一次登场时定下一套并记住，之后整场都用这套。
+   * 每句都重新挑的话画面会一直跳衣服；玩家在皮肤面板里手选后会锁住（locked）。
+   *
+   * 默认取第 0 张（原皮）。cfg.randomSkin 打开才随机抽 —— 别把这个默认改回
+   * true：卡里的换装图死链率不低，随机抽经常抽到裂图，玩家看到的还不是原皮。
    */
   Engine.prototype.ensureSkin = function (name) {
     var a = (global.RESOURCE && global.RESOURCE.defaults &&

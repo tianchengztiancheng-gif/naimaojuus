@@ -122,7 +122,8 @@ gal-engine/
 │   ├─ build-fixtures.mjs  ★ 从真表生成测试用的合成表（URL 全占位）
 │   ├─ measure-tokens.mjs  ★ 复现「粗估差多少」那张表
 │   ├─ e2e-card.mjs     ★ 真浏览器验「没素材包也能靠卡演出来」（需 playwright）
-│   ├─ smoke-test.js       ★ 307 项冒烟测试（jsdom 真跑 index.html）
+│   ├─ e2e-saves.mjs    ★ 真浏览器验「玩A→退出→开B→回到A」（需 playwright）
+│   ├─ smoke-test.js       ★ 333 项冒烟测试（jsdom 真跑 index.html）
 │   └─ unit/               ★ 332 项单测，run-all.mjs 一次跑完
 └─ test/
     ├─ fixtures/resource.js ★ 合成素材表（自动生成，进仓库）
@@ -531,6 +532,10 @@ v5.20 初版默认两段式（每轮多发一次解析请求）。改了：现�
 | 文档里的分词误差表错了两版 | 用的 `gpt-tokenizer-cl100k_base.js` 是从 Larimar vendor/ 拿的，**那文件里装的其实是 o200k 数据**。第三方 vendor 的文件名不是元数据，要验内容 |
 | 载了卡舞台还是空的 | `loadCard()` 压根没读立绘 —— 那一步只存在于离线的 build-juus.py 里。见七·六 |
 | 卡里一段代码被插得满正文都是 | 那条正则脚本没有 `findRegex`，空正则在每个字符缝隙都匹配 |
+| 除了有差分的角色全裂图 | 两件事叠一起：① `randomSkin` 默认 true，从全部皮肤里随机抽，抽中死链；② `swap()` 覆盖掉了 `makeChar()` 里"挂了就隐藏"的 onerror |
+| 图明明挂了却当成加载成功 | 缓存命中时 `onload` 不触发，而**失败的图 `complete` 也是 true**。要再判 `naturalWidth > 0` |
+| 换个开局玩，上一局存档没了 | `autosave()` 固定写死 `'auto'` 一个槽，所有周目共用 |
+| 读档后剧情记录是空的 | 「继续上次」只恢复了 history 和 vars，漏了 log/cursor/phoneSent/phoneSeq —— 同一件事写了两份，其中一份写残了 |
 | 界面上冒出 `**文字**` 或 `<b>` | 那几处是 `textContent` 赋值，HTML 标签和 Markdown 都不会被解析。要粗体就得用 `innerHTML` |
 | 锁了皮肤，一点下一句又跳回去 | 一轮十几句的立绘是 `processOutput` 时**一次性全解析好**的。只刷新当前句没用，得把整条日志里**这个角色**的立绘重解析（`refreshSpritesFor`）。只刷这一个角色 —— 全量重刷会把别人的多图差分重新随机抽一次，「没说话的人也在动」就又回来了 |
 | CG 闪一下就没 | 图只挂在一句上。要让它铺到被换掉为止（`nearestCG`），不是只在那一句显示 |
@@ -666,6 +671,64 @@ mv resource/juus /tmp/ && node tools/e2e-card.mjs . /tmp/shots
 
 playwright 不在默认依赖里，这个测试是可选的。
 `tools/smoke-test.js` 的 [6w2] 段用 jsdom 覆盖了同样的逻辑，那个是必跑的。
+
+
+## 七·七、原皮 / 退出 / 多周目存档（v5.20.2）
+
+玩家反馈「除了有差分的舰娘，其余的没用原皮，直接裂图了」。查下来是**两个**
+互相独立的缺陷叠在一起，外加翻出两个存档相关的 bug。
+
+### 裂图：两个成因，缺一不可
+
+**一、默认在随机抽皮肤。** `cfg.randomSkin` 原来默认 `true`，
+`ensureSkin()` 对只有默认立绘的角色做 `Math.random() * a.length`，
+从**全部皮肤里随机抽一张**。卡里那几千个换装 URL 挂在第三方图床上，
+死链不少，随机抽经常抽到挂掉的那几张 —— 而且玩家本来期待看到的就是原皮。
+改成默认 `0`（原皮），想随机的去 `设置 · 外观 · 只有默认立绘的角色随机换皮肤`。
+**别把这个默认改回 true。**
+
+**二、`swap()` 把保护性的 onerror 覆盖掉了。** `makeChar()` 里给每个 `<img>`
+挂了「挂了就隐藏这一层」的处理器，但 `swap()` 换图时会重设 `img.onerror`，
+把它顶掉，之后死链就直接裂在舞台上。现在 `swap()` 自己管全套：
+
+```
+主图挂 → 退到原皮（urls[0]） → 原皮也挂 → 隐藏整层 + 记进 imgFails
+```
+
+顺带修了一个隐蔽的：缓存命中时 `onload` 不会再触发，原来只判 `img.complete`
+就当成功了 —— 但**加载失败的图 `complete` 也是 true**，得再看 `naturalWidth > 0`。
+
+### 存档：autosave 固定写死一个槽
+
+`autosave()` 永远写 `'auto'`。开第二个开局，第一个的进度就被静默覆盖 ——
+「玩一个开局，存了去玩别的，回头再接着玩」这个需求直接踩雷。
+改成每次「开始游戏」生成一个 `runId`，自动存档写 `auto:<runId>`。
+`restoreFrom()` 会把 runId 一并恢复，所以接着玩是存回同一个槽，不会越存越多。
+老版本留下的那个全局 `'auto'` 仍然读得到（runId 为空时就继续写它）。
+
+### 「继续上次」会丢进度
+
+`btn-continue` 只恢复了 `history` 和 `vars`，**没恢复 `log` / `cursor` /
+`phoneSent` / `phoneSeq`** —— 读档后整条剧情记录是空的、手机消息也没了，
+只能从空白继续。存档面板里那条路径是完整的，等于同一件事写了两份，
+其中一份写残了。现在统一走 `restoreFrom(sv, id)`，只此一份。
+
+### 退出按钮
+
+工具栏第一个 `⏻`：先把当前周目存好，再清舞台、回开场引导。
+引导页左栏新增周目列表（`#boot-runs`），每条显示开局名 / 地点 / 天数 /
+轮数 / 时间 / 自动还是手动，点一下续上。`#btn-continue` 保留，
+续的是最近那一份（槽名放在 `dataset.slot`）。
+
+### 怎么验
+
+`tools/e2e-saves.mjs` 真浏览器跑完整流程：
+开 A → 看立绘是不是原皮（主图故意给死链）→ 退出 → 开 B →
+确认两份存档在不同槽里 → 点回 A → 确认剧情记录和光标都完整。18 项。
+
+```bash
+node tools/e2e-saves.mjs . /tmp/shots
+```
 
 
 ## 八、当前数据一览

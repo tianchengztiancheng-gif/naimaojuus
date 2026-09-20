@@ -58,6 +58,7 @@
   </div>
 
   <div id="toolbar" hidden>
+    <button id="btn-exit" title="保存并退出到开场（换个开局，或读别的存档）">⏻</button>
     <button id="btn-cgmode" title="CG 常驻：让 CG 盖住立绘，一直铺着推剧情">▣</button>
     <button id="btn-cg" title="CG / 相册">✿<i id="cg-dot" hidden></i></button>
     <button id="btn-skin" title="换装（在场舰娘的皮肤）">◈</button>
@@ -82,6 +83,9 @@
       <input type="range" id="t-y" min="-25" max="25" step="1" value="0"></label>
     <hr>
     <label class="chk2"><input type="checkbox" id="t-fx" checked> 立绘出场/换表情随机特效</label>
+    <!-- 默认关：卡里的换装图挂在第三方图床上，死链不少，随机抽经常抽到裂图，
+         而且玩家默认期待看到的就是原皮。 -->
+    <label class="chk2"><input type="checkbox" id="t-rndskin"> 只有默认立绘的角色随机换皮肤（默认用原皮）</label>
     <label class="chk2"><input type="checkbox" id="t-auto" checked> 对话框按正文高度收缩</label>
     <label>对话框模糊 <span class="v" id="v-bl">14px</span>
       <input type="range" id="t-bl" min="0" max="24" step="1" value="14"></label>
@@ -177,6 +181,13 @@
       <button type="button" class="boot-resume" id="btn-continue" hidden>
         <b>继续上次</b><span id="resume-meta">读取自动存档</span>
       </button>
+
+      <!-- 周目列表：每个开局各有自己的自动存档，可以来回切。
+           玩到一半点右上角 ⏻ 退出会存档并回到这里。 -->
+      <div class="boot-runs" id="boot-runs" hidden>
+        <div class="boot-runs-hd">全部存档</div>
+        <div class="boot-runs-body" id="boot-runs-body"></div>
+      </div>
 
       <nav class="boot-steps" id="boot-steps">
         <button type="button" data-step="asset">

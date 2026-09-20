@@ -122,8 +122,15 @@
       return Promise.all((ks || []).filter(function (k) { return String(k).indexOf(SLOT) === 0; })
         .map(function (k) {
           return get(k).then(function (v) {
-            return { id: String(k).slice(SLOT.length), at: v && v.at,
-                     title: (v && v.title) || '', turns: (v && v.history || []).length };
+            var id = String(k).slice(SLOT.length);
+            return { id: id, at: v && v.at,
+                     title: (v && v.title) || '',
+                     turns: (v && v.history || []).length,
+                     /* 下面三个给界面分组用：自动存档按周目各存各的，
+                        列表要能说清"这是哪个开局的第几天" */
+                     opening: (v && v.opening) || '',
+                     runId: (v && v.runId) || '',
+                     auto: id === 'auto' || id.indexOf('auto:') === 0 };
           });
         }));
     }).then(function (list) {

@@ -80,7 +80,8 @@
     });
     el.append(a, b);
     spritesEl.appendChild(el);
-    var rec = { el: el, front: a, back: b, url: null };
+    /* name 要留着：swap() 记录死链时得知道是谁的图 */
+    var rec = { el: el, front: a, back: b, url: null, name: name };
     live.set(name, rec);
     requestAnimationFrame(function () {
       requestAnimationFrame(function () { el.classList.remove('entering'); });
@@ -96,9 +97,28 @@
     });
   }
 
-  function swap(rec, url, isEnter) {
+  /* 加载失败的图，给调试面板用。卡里那几千个 URL 挂在第三方图床上，
+     死链是常态，不该让玩家看见浏览器的破图图标。 */
+  var imgFails = [];
+  function noteImgFail(who, url) {
+    if (imgFails.length < 200 &&
+        !imgFails.some(function (f) { return f.url === url; })) {
+      imgFails.push({ who: who, url: url, at: Date.now() });
+    }
+  }
+
+  /**
+   * 换一张立绘。
+   * @param {string} [fallbackUrl] 主图挂了就退到这张（一般是原皮 index 0）；
+   *        再挂就把整层藏掉 —— 绝不留破图图标。
+   *
+   * ⚠ 这里必须自己管好 img.onerror。makeChar() 里挂过一个"挂了就隐藏"的
+   *   处理器，但下面会覆盖掉它；早先就是因为覆盖后没补回来，死链直接裂在舞台上。
+   */
+  function swap(rec, url, isEnter, fallbackUrl) {
     return new Promise(function (res) {
       var img = rec.back.querySelector('img'), settled = false;
+      var lay = rec.back, triedFallback = false;
       var timer = setTimeout(reveal, 1500);
       function reveal() {
         if (settled) return;
@@ -111,13 +131,32 @@
       }
       function ready() {
         img.onload = img.onerror = null;
+        lay.style.visibility = '';
         img.decode ? img.decode().then(reveal).catch(reveal) : reveal();
       }
-      if (img.getAttribute('src') === url && img.complete) return ready();
+      function failed() {
+        noteImgFail(rec.name, img.getAttribute('src'));
+        /* 先退原皮 */
+        if (!triedFallback && fallbackUrl && fallbackUrl !== url) {
+          triedFallback = true;
+          lay.style.visibility = 'hidden';
+          img.src = fallbackUrl;          // onload/onerror 还挂着，会再走一轮
+          return;
+        }
+        /* 原皮也挂了：藏掉这一层，剧情照常推进 */
+        img.onload = img.onerror = null;
+        lay.style.visibility = 'hidden';
+        reveal();
+      }
+      if (img.getAttribute('src') === url && img.complete && img.naturalWidth > 0) {
+        return ready();
+      }
       img.onload = ready;
-      img.onerror = function () { img.onload = img.onerror = null; reveal(); };
+      img.onerror = failed;
       img.src = url;
-      if (img.complete) ready();
+      /* 缓存命中时 onload 不会再触发，得自己判一次。
+         complete 为 true 但 naturalWidth 为 0 = 加载失败。 */
+      if (img.complete) { img.naturalWidth > 0 ? ready() : failed(); }
     });
   }
 
@@ -133,7 +172,9 @@
     sprites.forEach(function (s) {
       var isNew = !live.has(s.who);
       var rec = live.get(s.who) || makeChar(s.who);
-      if (rec.url !== s.url) { rec.url = s.url; jobs.push(swap(rec, s.url, isNew)); }
+      /* 死链时退到原皮：urls[0] 就是 index 0 那张 */
+      var base = (s.urls && s.urls.length) ? s.urls[0] : null;
+      if (rec.url !== s.url) { rec.url = s.url; jobs.push(swap(rec, s.url, isNew, base)); }
     });
     stageNow = sprites;
     layout();
@@ -2716,19 +2757,67 @@
   /* ============================================================
      存读档
      ============================================================ */
+  /* ---------- 周目 ----------
+     每次「开始游戏」生成一个新的 runId，自动存档写进**这个周目自己的槽**
+     （auto:<runId>）。以前所有周目共用一个 'auto'：开第二个开局，第一个
+     的进度就被悄悄覆盖了 —— 想换个开局玩玩再回来的人会直接丢档。 */
+  var runId = null;
+  function newRunId() {
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  }
+  /* runId 为空 = 还没开过局，或读的是老版本留下的那个全局 'auto'，
+     这种情况继续写 'auto'，不给老存档搬家。 */
+  function autoSlotId() { return runId ? 'auto:' + runId : 'auto'; }
+
   function snapshot() {
     return {
       title: (eng.vars.地点 || '未知地点') + ' · 第' +
              ((eng.vars.时间 && eng.vars.时间.天数) || 1) + '天',
       history: eng.history, vars: eng.vars, log: eng.log,
       phoneSent: eng.phoneSent, phoneSeq: eng.phoneSeq,
-      cursor: qi, opening: currentOpening
+      cursor: qi, opening: currentOpening, runId: runId
     };
   }
   function autosave() {
-    GalStore.saveSlot('auto', snapshot()).catch(function (e) {
+    GalStore.saveSlot(autoSlotId(), snapshot()).catch(function (e) {
       console.warn('[存档] 自动保存失败', e);
     });
+  }
+
+  /**
+   * 从一份存档完整恢复。
+   *
+   * ⚠ 必须恢复**全部**五样：history / vars / log / phoneSent / phoneSeq，
+   *   外加光标位置。早先「继续上次」只恢复了前两样，结果读档后整条剧情
+   *   记录是空的、手机消息也没了，只能从空白继续 —— 别再拆开写第二份。
+   *
+   * @param {string} [id] 这份存档的槽名，用来推断周目 id
+   */
+  function restoreFrom(sv, id) {
+    if (!sv) return false;
+    eng.history = sv.history || [];
+    eng.vars = sv.vars || {};
+    eng.log = sv.log || [];
+    eng.phoneSent = sv.phoneSent || [];
+    eng.phoneSeq = sv.phoneSeq || 0;
+    currentOpening = sv.opening || null;
+    /* 接着往下玩时，自动存档要落回同一个周目的槽，不能另起一个 */
+    runId = sv.runId ||
+            (id && id.indexOf('auto:') === 0 ? id.slice(5) : null);
+
+    closePhone();
+    enterGame();
+    live.forEach(function (r) { r.el.remove(); }); live.clear();
+    stageNow = []; lastBgUrl = null;
+    if (eng.log.length) {
+      goTo(sv.cursor != null ? sv.cursor : eng.log.length - 1, { instant: true });
+      renderHistory();
+    } else {
+      speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
+      textEl.textContent = '已读取存档（' + eng.history.length + ' 轮），但没有剧情记录。继续输入以推进。';
+      qi = 0; updateNav();
+    }
+    return true;
   }
 
   async function renderSlots() {
@@ -2752,27 +2841,7 @@
   async function slotClick(e) {
     var id = e.target.getAttribute('data-load');
     if (id) {
-      var sv = await GalStore.loadSlot(id);
-      if (sv) {
-        eng.history = sv.history || [];
-        eng.vars = sv.vars || {};
-        eng.log = sv.log || [];
-        eng.phoneSent = sv.phoneSent || [];
-        eng.phoneSeq = sv.phoneSeq || 0;
-        currentOpening = sv.opening;
-        closePhone();
-        $('dialogue').hidden = false;
-        live.forEach(function (r) { r.el.remove(); }); live.clear();
-        stageNow = []; lastBgUrl = null;
-        if (eng.log.length) {
-          goTo(sv.cursor != null ? sv.cursor : eng.log.length - 1, { instant: true });
-          renderHistory();
-        } else {
-          speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
-          textEl.textContent = '已读取存档（' + eng.history.length + ' 轮），但没有剧情记录。继续输入以推进。';
-          qi = 0; updateNav();
-        }
-      }
+      restoreFrom(await GalStore.loadSlot(id), id);
       return;
     }
     var r = e.target.getAttribute('data-ren');
@@ -2981,7 +3050,7 @@
      立绘微调（大小 / 垂直位置），记在 localStorage
      ============================================================ */
   var TUNE_DEF = { h: 78, y: 0, o: 100, bg: 52, bd: 16, ms: 4, bl: 14, py: 0,
-                   auto: true, fx: true, fav: 80,
+                   auto: true, fx: true, fav: 80, rndskin: false,
                    keepAll: false, lp: 20, lt: 20 };
   function applyTune(t) {
     var R = document.documentElement.style;
@@ -3009,6 +3078,8 @@
     $('v-py').textContent = t.py + '%'; $('t-py').value = t.py;
     $('t-auto').checked = !!t.auto;
     $('t-fx').checked = t.fx !== false;
+    $('t-rndskin').checked = !!t.rndskin;
+    eng.cfg.randomSkin = !!t.rndskin;
     fxOn = t.fx !== false;
     document.documentElement.classList.toggle('dlg-auto', !!t.auto);
     eng.cfg.maxStage = t.ms;
@@ -3050,6 +3121,7 @@
               bg: +$('t-bg').value, bd: +$('t-bd').value, ms: +$('t-ms').value,
               bl: +$('t-bl').value, py: +$('t-py').value,
               auto: $('t-auto').checked, fx: $('t-fx').checked,
+              rndskin: $('t-rndskin').checked,
               fav: +$('t-fav').value, keepAll: $('t-keepall').checked,
               lp: +$('t-lp').value, lt: +$('t-lt').value };
     GalStore.local('gal_tune', t); applyTune(t);
@@ -3060,6 +3132,7 @@
   });
   $('t-auto').addEventListener('change', writeTune);
   $('t-fx').addEventListener('change', writeTune);
+  $('t-rndskin').addEventListener('change', writeTune);
   $('t-keepall').addEventListener('change', function () { writeTune(); renderPhone(); });
   $('t-reset').onclick = function () { GalStore.local('gal_tune', TUNE_DEF); applyTune(TUNE_DEF); };
   applyTune(readTune());
@@ -3189,6 +3262,61 @@
     ['dialogue', 'inputbar', 'toolbar'].forEach(function (id) { $(id).hidden = false; });
   }
 
+  /**
+   * 退出到开场。先把当前周目存好，再回引导页 —— 在那里可以挑别的存档、
+   * 或者换个开局重开。舞台要清干净，否则下次进来会看见上一局的残留立绘。
+   */
+  async function leaveGame() {
+    if (eng.log.length || eng.history.length) {
+      try { await GalStore.saveSlot(autoSlotId(), snapshot()); }
+      catch (e) { console.warn('[存档] 退出前保存失败', e); }
+    }
+    closePhone();
+    ['skin-panel', 'cg-panel', 'cg'].forEach(function (id) {
+      var el = $(id); if (el) el.hidden = true;
+    });
+    ['dialogue', 'inputbar', 'toolbar'].forEach(function (id) { $(id).hidden = true; });
+    live.forEach(function (r) { r.el.remove(); }); live.clear();
+    stageNow = []; lastBgUrl = null;
+    $('boot').classList.remove('gone');
+    await renderRuns();
+  }
+
+  /** 开场引导左栏的周目列表 */
+  async function renderRuns() {
+    var list;
+    try { list = await GalStore.listSaves(); }
+    catch (e) { list = []; }
+    list = list.filter(function (s) { return s.turns > 0; });
+
+    var box = $('boot-runs'), body = $('boot-runs-body');
+    if (!box || !body) return list;
+    if (!list.length) { box.hidden = true; $('btn-continue').hidden = true; return list; }
+
+    box.hidden = false;
+    /* 最近那一份单独提到上面，点一下直接续上 —— 最常见的操作不该要先读列表 */
+    $('btn-continue').hidden = false;
+    $('btn-continue').dataset.slot = list[0].id;
+    $('resume-meta').textContent =
+      (list[0].opening || '未命名开局') + ' · ' + list[0].title + ' · ' + list[0].turns + ' 轮';
+
+    body.innerHTML = list.map(function (s) {
+      return '<button type="button" class="runrow" data-run="' + esc(s.id) + '">' +
+        '<div class="ri"><b>' + esc(s.opening || (s.auto ? '未命名开局' : s.id)) + '</b>' +
+        '<span>' + esc(s.title) + ' · ' + s.turns + ' 轮 · ' +
+        new Date(s.at || 0).toLocaleString() + '</span></div>' +
+        '<i class="tag">' + (s.auto ? '自动' : '手动') + '</i></button>';
+    }).join('');
+    return list;
+  }
+
+  $('boot-runs-body').onclick = async function (e) {
+    var btn = e.target.closest('[data-run]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-run');
+    restoreFrom(await GalStore.loadSlot(id), id);
+  };
+
   $('btn-start').onclick = function () {
     saveCfgFromForm();
     if (!loaded.preset) {
@@ -3199,6 +3327,7 @@
     var list = $('opening-sel')._list || [];
     var pick = list[parseInt($('opening-sel').value, 10)] || null;
     currentOpening = pick ? pick.n : null;
+    runId = newRunId();          // 新周目，自动存档另开一个槽，不碰上一局
     eng.history = [];
     eng.log = [];
     eng.phoneSent = [];
@@ -3216,14 +3345,14 @@
     }
   };
 
+  /* 续最近的那一份。槽名由 renderRuns() 填进 dataset，
+     退回 'auto' 是为了兼容老版本留下的那个全局槽。 */
   $('btn-continue').onclick = async function () {
-    var s = await GalStore.loadSlot('auto');
-    if (!s) return;
-    eng.history = s.history || []; eng.vars = s.vars || {};
-    enterGame();
-    speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
-    textEl.textContent = '已恢复上次进度（' + eng.history.length + ' 轮）。继续输入以推进。';
+    var id = this.dataset.slot || 'auto';
+    restoreFrom(await GalStore.loadSlot(id), id);
   };
+
+  $('btn-exit').onclick = function () { leaveGame(); };
 
   /* ============================================================
      绑定
@@ -3272,7 +3401,11 @@
     gotoBoot: gotoBoot, bootDone: bootDone,
     imgCfg: imgCfg,
     redraw: function (i) { return redrawLine(i == null ? qi : i); },
-    cgSticky: cgSticky
+    cgSticky: cgSticky,
+    /* 存档相关的钩子，端到端测试要用 */
+    autosave: autosave, leaveGame: leaveGame, renderRuns: renderRuns,
+    autoSlotId: function () { return autoSlotId(); },
+    imgFails: function () { return imgFails.slice(); }
   };
 
   /* 恢复上次的素材与配置 */
@@ -3288,7 +3421,7 @@
         $('f-preset').parentNode.classList.add('ok');
       }
       noteAssets();
-      if (r[2] && (r[2].history || []).length) $('btn-continue').hidden = false;
+      renderRuns();      // 列出全部周目，顺便决定「继续上次」露不露
     })
     .catch(function () { noteAssets(); });
 })();

@@ -940,6 +940,66 @@ console.log('\n[6w2] 载卡时从卡里直接抽素材表');
                     return E2.resStats && E2.resStats.found === false; })());
 }
 
+console.log('\n[6w3] 原皮默认 / 退出 / 多周目');
+{
+  /* 1. 默认原皮 —— 卡里的换装图死链不少，随机抽经常抽到裂图 */
+  const E = new w.Engine();
+  ok('randomSkin 默认关（用原皮）', E.cfg.randomSkin === false, String(E.cfg.randomSkin));
+  w.RESOURCE.defaults['皮肤测试娘'] =
+    ['https://t.invalid/base.png', 'https://t.invalid/alt1.png', 'https://t.invalid/alt2.png'];
+  E.vars.人物 = {};
+  ok('多皮肤角色登场取第 0 张', E.ensureSkin('皮肤测试娘') === 0);
+  const sp = w.Resolver.sprite('皮肤测试娘', '微笑', { skin: 0 });
+  ok('解析出来就是原皮那张', sp && sp.url === 'https://t.invalid/base.png',
+     JSON.stringify(sp && sp.url));
+  ok('sprite 带上了完整 urls（渲染层靠它回退原皮）',
+     sp && Array.isArray(sp.urls) && sp.urls.length === 3);
+  /* 打开随机后才随机 */
+  const E2 = new w.Engine({ randomSkin: true });
+  E2.vars.人物 = {};
+  const picks = new Set();
+  for (let i = 0; i < 60; i++) { E2.vars.人物 = {}; picks.add(E2.ensureSkin('皮肤测试娘')); }
+  ok('打开 randomSkin 后确实会随机', picks.size > 1, '抽到过 ' + [...picks].join('/'));
+  ok('设置页有这个开关', !!d.getElementById('t-rndskin'));
+  ok('开关默认不勾', d.getElementById('t-rndskin').checked === false);
+
+  /* 2. 退出按钮 */
+  ok('工具栏有退出按钮', !!d.getElementById('btn-exit'));
+  ok('退出按钮有说明文字',
+     /退出|开场/.test(d.getElementById('btn-exit').getAttribute('title') || ''));
+
+  /* 3. 周目列表容器 */
+  ok('引导页有周目列表', !!d.getElementById('boot-runs') && !!d.getElementById('boot-runs-body'));
+  ok('继续上次按钮还在（老 id 不能丢）', !!d.getElementById('btn-continue'));
+}
+
+console.log('\n[6w4] 存档槽：每个周目各存各的');
+{
+  /* autosave 以前固定写死 'auto'，开第二个开局会把第一个盖掉。 */
+  const src = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('autosave 不再写死 auto 槽', /saveSlot\(autoSlotId\(\)/.test(src));
+  ok('有 newRunId', /function newRunId/.test(src));
+  ok('开始游戏时换新周目 id', /runId = newRunId\(\)/.test(src));
+  ok('snapshot 带上 runId', /runId: runId/.test(src));
+  /* 完整恢复：以前「继续上次」只恢复 history 和 vars */
+  ok('restoreFrom 恢复 log', /eng\.log = sv\.log/.test(src));
+  ok('restoreFrom 恢复 phoneSent', /eng\.phoneSent = sv\.phoneSent/.test(src));
+  ok('restoreFrom 恢复 phoneSeq', /eng\.phoneSeq = sv\.phoneSeq/.test(src));
+  ok('restoreFrom 恢复光标', /sv\.cursor != null/.test(src));
+  ok('继续上次改用 restoreFrom（不再是残缺的复制品）',
+     /\$\('btn-continue'\)\.onclick[\s\S]{0,220}restoreFrom/.test(src));
+  ok('读档面板也走同一个 restoreFrom',
+     (src.match(/restoreFrom\(/g) || []).length >= 4,
+     (src.match(/restoreFrom\(/g) || []).length + ' 处');
+  /* 死链回退 */
+  ok('swap 接收原皮兜底参数', /function swap\(rec, url, isEnter, fallbackUrl\)/.test(src));
+  ok('死链会退到原皮', /triedFallback/.test(src));
+  ok('原皮也挂就隐藏整层', /visibility = 'hidden'[\s\S]{0,120}reveal\(\)/.test(src));
+  ok('记录死链供排查', /function noteImgFail/.test(src));
+  ok('缓存命中也判 naturalWidth（complete 为真但宽 0 = 失败）',
+     /img\.complete && img\.naturalWidth > 0/.test(src));
+}
+
 console.log('\n[6x] token 计数');
 ok('默认是粗估', w.Tokens.mode('gpt-4') === 'rough');
 ok('粗估仍返回数字', typeof w.Tokens.count('你好世界', 'gpt-4') === 'number');
