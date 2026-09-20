@@ -367,3 +367,13 @@
 /* 同一行里的相邻按钮要留缝，光靠 HTML 里那个空格顶不住 */
 #jup-root .kt-btn + .kt-btn{margin-left:10px}
 #jup-root .kt-sec > .kt-btn{margin-top:10px}
+
+/* ---------- 存读档：导出/导入工具条 ---------- */
+#jup-root .sv-bar, .sv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  padding:0 0 12px;margin-bottom:10px;border-bottom:1px solid rgba(var(--acc),.16)}
+#jup-root .sv-chk, .sv-chk{display:inline-flex;align-items:center;gap:6px;
+  font-size:11.5px;color:rgb(var(--sub));cursor:pointer}
+#jup-root .sv-note, .sv-note{flex-basis:100%;font-size:11.5px;line-height:1.7;
+  color:rgb(var(--sub))}
+#jup-root .sv-note.ok, .sv-note.ok{color:rgb(var(--ok))}
+#jup-root .sv-note.bad, .sv-note.bad{color:rgb(var(--bad))}

@@ -2876,6 +2876,103 @@
     return true;
   }
 
+  /* ============================================================
+     存档的导出 / 导入
+     ============================================================
+     为什么必须有：存档在浏览器的 IndexedDB 里，清缓存、换浏览器、换设备
+     都会没。而且 file:// 打开的本地文件和 https:// 的网址**是两个不同的源**，
+     存档不互通 —— 这点最容易让人以为"数据丢了"。
+     以前只有崩溃兜底页里那颗按钮能导出，等于崩了才能备份，很荒谬。
+
+     导出的内容不含 API 密钥（snapshot() 里本来就没有），可以放心传给别人。 */
+
+  var SAVE_PACK = 'gal-saves';      // 包格式标识，导入时校验用
+  var SAVE_PACK_V = 1;
+
+  /**
+   * @param {string[]} [ids] 只导这几个；不传就是全部
+   * @param {boolean} [withImages] 连 CG 图一起打包。图是 dataURL，一张 1~2MB，
+   *        几十张就上百兆，所以默认不带。
+   */
+  async function exportSaves(ids, withImages) {
+    /* 先把当前进度落一次盘。自动存档只在「生成完一轮」时触发，
+       玩家翻了几页再点导出的话，不先存就会把旧位置导出去 ——
+       实测过：翻到第 2 句导出，读回来停在第 1 句。 */
+    if (eng.log.length || eng.history.length) {
+      try { await GalStore.saveSlot(autoSlotId(), snapshot()); } catch (e) {}
+    }
+    var list = await GalStore.listSaves();
+    if (ids && ids.length) {
+      list = list.filter(function (s) { return ids.indexOf(s.id) >= 0; });
+    }
+    var pack = { kind: SAVE_PACK, v: SAVE_PACK_V, at: new Date().toISOString(),
+                 saves: {}, images: null };
+    for (var i = 0; i < list.length; i++) {
+      var d = await GalStore.loadSlot(list[i].id);
+      if (d) pack.saves[list[i].id] = d;
+    }
+    if (withImages && global.Gallery) {
+      pack.images = {};
+      try {
+        var metas = await Gallery.list();
+        for (var j = 0; j < metas.length; j++) {
+          var src = await Gallery.src(metas[j].id);
+          if (src) pack.images[metas[j].id] = { src: src, meta: metas[j] };
+        }
+      } catch (e) { pack.images = null; }
+    }
+    var n = Object.keys(pack.saves).length;
+    var name = 'gal-存档备份-' + new Date().toISOString().slice(0, 10) +
+               (ids && ids.length === 1 ? '-' + ids[0] : '-全部' + n + '份') + '.json';
+    download(name, JSON.stringify(pack));
+    return { count: n, images: pack.images ? Object.keys(pack.images).length : 0 };
+  }
+
+  /**
+   * 导入。**合并，不覆盖** —— 重名的存档加后缀另存，
+   * 免得手一抖把正在玩的那个盖掉。
+   */
+  async function importSaves(text) {
+    var pack;
+    try { pack = JSON.parse(text); }
+    catch (e) { throw new Error('这不是一个有效的 JSON 文件'); }
+    if (!pack || pack.kind !== SAVE_PACK || !pack.saves) {
+      throw new Error('这不是本引擎导出的存档备份（缺 kind/saves 字段）');
+    }
+    var have = {};
+    (await GalStore.listSaves()).forEach(function (s) { have[s.id] = 1; });
+
+    var added = 0, renamed = 0;
+    var ids = Object.keys(pack.saves);
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i], target = id;
+      if (have[target]) {
+        renamed++;
+        var k = 2;
+        while (have[id + '(导入' + k + ')']) k++;
+        target = id + '(导入' + k + ')';
+      }
+      await GalStore.saveSlot(target, pack.saves[id]);
+      have[target] = 1;
+      added++;
+    }
+
+    var imgs = 0;
+    if (pack.images && global.Gallery) {
+      var iid = Object.keys(pack.images);
+      for (var j = 0; j < iid.length; j++) {
+        var it = pack.images[iid[j]];
+        /* Gallery.put 收的是一个完整记录对象（带 id / src / turn / logIndex …），
+           把导出时存下的 meta 原样还回去，id 保持不变 —— 存档里挂的就是这个 id。 */
+        try {
+          await Gallery.put(Object.assign({}, it.meta || {}, { id: iid[j], src: it.src }));
+          imgs++;
+        } catch (e) {}
+      }
+    }
+    return { added: added, renamed: renamed, images: imgs };
+  }
+
   async function renderSlots() {
     var list;
     try { list = await GalStore.listSaves(); }
@@ -2884,20 +2981,74 @@
       return;
     }
     var note = GalStore.backendNote();
-    $('slotlist').innerHTML = (note ? '<p class="warn" style="margin-bottom:8px">' + esc(note) + '</p>' : '') +
+    $('slotlist').innerHTML =
+      (note ? '<p class="warn" style="margin-bottom:8px">' + esc(note) + '</p>' : '') +
+      '<div class="sv-bar">' +
+        '<button class="kt-btn" id="sv-exp">导出全部</button> ' +
+        '<button class="kt-btn" id="sv-imp">导入备份</button>' +
+        '<label class="sv-chk"><input type="checkbox" id="sv-img"> 连 CG 图一起导（文件会很大）</label>' +
+        '<input type="file" id="sv-file" accept=".json,application/json" hidden>' +
+        '<div class="sv-note" id="sv-note">存档只在这个浏览器里。清缓存、换设备都会没，' +
+        '本地打开的文件和网址也各存各的 —— 玩得久了记得导一份出来。</div>' +
+      '</div>' +
       (list.length ? list.map(function (s) {
-      return '<div class="slot"><div><b>' + esc(s.id === 'auto' ? '自动存档' : s.id) + '</b>' +
+      /* 自动存档的槽名是 auto:<周目id>，那串随机字符对玩家没有意义。
+         显示成「自动存档 · 开局名」，认得出是哪一局就行。 */
+      var name = s.auto ? ('自动存档' + (s.opening ? ' · ' + s.opening : '')) : s.id;
+      return '<div class="slot"><div><b>' + esc(name) + '</b>' +
         '<div class="meta">' + esc(s.title) + ' · ' + s.turns + ' 轮 · ' +
         new Date(s.at).toLocaleString() + '</div></div><div>' +
         '<button data-load="' + esc(s.id) + '">读取</button> ' +
-        (s.id === 'auto' ? '' : '<button data-ren="' + esc(s.id) + '">改名</button> ') +
+        '<button data-exp="' + esc(s.id) + '">导出</button> ' +
+        (s.auto ? '' : '<button data-ren="' + esc(s.id) + '">改名</button> ') +
         '<button data-del="' + esc(s.id) + '">删除</button></div></div>';
     }).join('') : '<p class="dim">还没有存档。开始游戏后会自动存一份。</p>');
+
+    var note2 = $('sv-note');
+    var say = function (t, cls) {
+      if (note2) { note2.textContent = t; note2.className = 'sv-note ' + (cls || ''); }
+    };
+    $('sv-exp').onclick = async function () {
+      say('正在打包…');
+      try {
+        var r = await exportSaves(null, $('sv-img').checked);
+        say('已导出 ' + r.count + ' 份存档' + (r.images ? '、' + r.images + ' 张图' : '') + '。', 'ok');
+      } catch (e) { say('导出失败：' + (e.message || e), 'bad'); }
+    };
+    $('sv-imp').onclick = function () { $('sv-file').click(); };
+    $('sv-file').onchange = function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = async function () {
+        try {
+          var r = await importSaves(String(rd.result));
+          /* 必须先重建列表再写提示：renderSlots() 会重建整块 innerHTML，
+             先写的话提示立刻就被冲掉了（note2 指向的元素也没了）。 */
+          await renderSlots();
+          var n2 = $('sv-note');
+          if (n2) {
+            n2.className = 'sv-note ok';
+            n2.textContent = '导入了 ' + r.added + ' 份' +
+              (r.renamed ? '（其中 ' + r.renamed + ' 份重名，已另存副本，没有覆盖原档）' : '') +
+              (r.images ? '，另有 ' + r.images + ' 张图' : '') + '。';
+          }
+        } catch (e) { say('导入失败：' + (e.message || e), 'bad'); }
+      };
+      rd.readAsText(f);
+      this.value = '';
+    };
   }
   async function slotClick(e) {
     var id = e.target.getAttribute('data-load');
     if (id) {
       restoreFrom(await GalStore.loadSlot(id), id);
+      return;
+    }
+    var x = e.target.getAttribute('data-exp');
+    if (x) {
+      try { await exportSaves([x], $('sv-img') && $('sv-img').checked); }
+      catch (err) { console.warn('[存档] 导出失败', err); }
       return;
     }
     var r = e.target.getAttribute('data-ren');

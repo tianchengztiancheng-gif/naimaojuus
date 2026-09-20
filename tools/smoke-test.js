@@ -1124,6 +1124,23 @@ console.log('\n[6w6] 四条小修（错误兜底 / 输入法 / 保住文字 / �
   }
 }
 
+console.log('\n[6w7] 存档导出 / 导入');
+{
+  const srcApp = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('有导出函数', /async function exportSaves/.test(srcApp));
+  ok('有导入函数', /async function importSaves/.test(srcApp));
+  ok('导出前先落一次盘（否则导的是上次自动存档的位置）',
+     /exportSaves[\s\S]{0,400}saveSlot\(autoSlotId\(\), snapshot\(\)\)/.test(srcApp));
+  ok('导入是合并、重名另存，不覆盖', /导入' \+ k \+ '\)/.test(srcApp) || /\(导入/.test(srcApp));
+  ok('包有格式标识，防止导错文件', /kind !== SAVE_PACK/.test(srcApp));
+  ok('CG 图默认不打包（一张 1~2MB）', /withImages/.test(srcApp));
+  ok('导入后先重建列表再写提示', /await renderSlots\(\);[\s\S]{0,80}sv-note/.test(srcApp));
+  ok('自动存档不显示原始周目 id', /s\.auto \? \('自动存档'/.test(srcApp));
+  ok('面板上有导出/导入按钮', /id="sv-exp"/.test(srcApp) && /id="sv-imp"/.test(srcApp));
+  ok('每条存档有单独导出', /data-exp="/.test(srcApp));
+  ok('提示了数据会丢的风险', /清缓存、换设备都会没/.test(srcApp));
+}
+
 console.log('\n[6x] token 计数');
 ok('默认是粗估', w.Tokens.mode('gpt-4') === 'rough');
 ok('粗估仍返回数字', typeof w.Tokens.count('你好世界', 'gpt-4') === 'number');

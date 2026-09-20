@@ -24,3 +24,11 @@ docs/立绘清单.md
 Thumbs.db
 /tmp/
 shots/
+
+# ── 调查/探测用的一次性脚本 ──
+# 上一轮有个 _css_probe3.js 被 `git add -A` 扫进了公开仓库。
+# 临时脚本一律用下面这些前缀命名，就不会再误传。
+_probe*
+_tmp*
+*-tmp.*
+v[0-9]*.mjs
