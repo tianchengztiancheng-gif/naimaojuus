@@ -575,6 +575,11 @@ v5.20 初版默认两段式（每轮多发一次解析请求）。改了：现�
 | 重roll 后旧图挂到新句子上 | CG 按 log 下标挂图，出图十几秒里下标已经换了主人。改成认句子对象本身 |
 | 顶部提示挡住存档界面的关闭按钮 | toast 在 top:14px、z-index 最高且可点。挪到 72px |
 
+| 手机上小手机的返回键点不了 | 底部圆键在全面屏上压着系统手势条；横屏时机身按 393:852 的比例缩，被裁掉一半。手机模式铺满 + 返回键放顶上 |
+| 手机上底部按钮被压到地址栏后面 | 用了 `100vh`。手机浏览器的 vh 算上了地址栏，要用 `100dvh` |
+| 小屏上选项盖住正文 | 对话框高度按选项的 `offsetHeight` 算，那是已经被压扁的高度。用 `scrollHeight` |
+| 主屏简报卡的字贴着边 | 又是 `#jup-root *{padding:0}`，按类写的 padding 被压成 0 |
+
 **教训**：`tools/smoke-test.js` 用 jsdom 真跑 `index.html`，
 上面一半的坑是它抓到的。改完先跑：
 
@@ -1035,6 +1040,21 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 
 `tools/unit/test-savetree.mjs`（25 项）、冒烟 [7d]、`tools/e2e-reroll.mjs`（31 项，真浏览器 + 假接口）。
 `e2e-saves` / `e2e-backup` 跟着改了：每个开局多一个「开场」根节点；手机里的存读档只剩「打开存档」按钮。
+
+## 七·十四、手机适配（v5.22）
+
+- **模式类**在 `<html>` 上：`m-pc` / `m-mobile m-port` / `m-mobile m-land`。`index.html` 的 `<head>` 里有一段内联脚本在
+  第一帧前就加上（不加的话手机上会先闪一下电脑版），`app.js` 的 `applyDeviceClasses()` 是同一套逻辑，转屏 / resize 时重算。
+  选择存 `localStorage.gal_device`（auto / pc / mobile）。自动 = `(pointer:coarse)` 且屏幕短边 ≤ 820。
+- **样式**全在 `app/mobile.css`，每条都以 `html.m-mobile` 开头，最后加载。电脑模式不受任何影响 —— 改手机版式时别往
+  `style.css` 里写，那边是电脑的。小手机里的规则必须带 `#jup-root`（`phone-inner.css` 的 `#jup-root *{padding:0}`）。
+- **竖屏单人**不是改引擎的 `maxStage`（那是解析时定死的，转屏就不对了），而是渲染时 `stageFor(m)` 过滤：
+  说话的人 → 旁白时刚才那个人 → 第一个。`onLayoutChange()` 在切设备 / 转屏时按新规则重摆当前这句。
+- **小手机**：手机模式下去掉机身、铺满，`#ph-m-back`（`phoneBack()`：在主屏就收起，否则 `goHome()` 逐级返回）
+  和 `#ph-m-close` 常驻顶上；底部 `.ph-homebar` 隐藏。
+- **对话框高度** `refreshDlgHeight()`：上限按模式（电脑 72%，竖屏 50/62%，横屏 56/70%，斜杠后是有选项时）。
+  选项高度要用 `scrollHeight`。
+- 测试：`tools/e2e-mobile.mjs`（144 项），冒烟 [7e]。想看样子可以跑它，截图在第二个参数指定的目录。
 
 ## 八、当前数据一览
 

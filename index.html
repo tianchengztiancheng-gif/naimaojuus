@@ -3,14 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1a26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Gal 引擎</title>
+<!-- 设备模式（电脑 / 手机竖屏 / 手机横屏）要在第一帧之前定下来，不然手机上会先闪一下电脑版。
+     逻辑和 app.js 里的 applyDeviceClasses() 一致：localStorage 里选过就用选的，没选过按设备自动判断 -->
+<script>
+(function () {
+  try {
+    var h = document.documentElement, pref = localStorage.getItem('gal_device') || 'auto';
+    var auto = (matchMedia('(pointer:coarse)').matches &&
+                Math.min(screen.width, screen.height) <= 820) ? 'mobile' : 'pc';
+    var dev = pref === 'pc' || pref === 'mobile' ? pref : auto;
+    var port = matchMedia('(orientation: portrait)').matches;
+    h.classList.add(dev === 'mobile' ? 'm-mobile' : 'm-pc');
+    if (dev === 'mobile') h.classList.add(port ? 'm-port' : 'm-land');
+  } catch (e) {}
+})();
+</script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.21">
+<link rel="stylesheet" href="app/style.css?v=5.22">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.21">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.22">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.21">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.21">
+<link rel="stylesheet" href="app/phone.css?v=5.22">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.22">
+<!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
+<link rel="stylesheet" href="app/mobile.css?v=5.22">
 </head>
 <body>
 
@@ -87,6 +107,10 @@
   </div>
 
   <div id="tune" hidden>
+    <div class="tune-dev">显示模式
+      <span class="seg"><button type="button" data-dev="auto">自动</button><button type="button" data-dev="pc">电脑</button><button type="button" data-dev="mobile">手机</button></span>
+    </div>
+    <hr>
     <label>立绘大小 <span class="v" id="v-h">78%</span>
       <input type="range" id="t-h" min="45" max="130" step="1" value="78"></label>
     <label>垂直位置 <span class="v" id="v-y">0%</span>
@@ -174,6 +198,9 @@
     <div class="ph-rim"></div>
     <div class="ph-screen" id="jup-root">
       <div class="ph-island"></div>
+      <!-- 手机模式专用：顶上的返回 / 收起。底部圆键在全面屏上会被系统手势条挡住 -->
+      <button type="button" class="ph-m-btn" id="ph-m-back" aria-label="返回">‹ 返回</button>
+      <button type="button" class="ph-m-btn" id="ph-m-close" aria-label="收起手机">✕</button>
       <div class="ph-status"><span id="ph-time">9:41</span>
         <span class="r">▮▮▮<b id="ph-batt"></b></span></div>
       <div class="ph-layer ph-home on" data-app="home">
@@ -227,6 +254,17 @@
         </div>
       </div>
 
+      <!-- 设备：手机端有单独一套版式（app/mobile.css）。默认自动判断，这里可以手动改 -->
+      <div class="boot-device" role="group" aria-label="显示模式">
+        <span class="lbl">显示模式</span>
+        <div class="seg">
+          <button type="button" data-dev="auto">自动</button>
+          <button type="button" data-dev="pc">💻 电脑</button>
+          <button type="button" data-dev="mobile">📱 手机</button>
+        </div>
+        <span class="hint" id="dev-auto"></span>
+      </div>
+
       <button type="button" class="boot-resume" id="btn-continue" hidden>
         <b>继续上次</b><span id="resume-meta">读取自动存档</span>
       </button>
@@ -250,7 +288,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.21</span>
+        <span>gal 引擎 · v5.22</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -380,25 +418,25 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.21"></script>
-<script src="core/cardres.js?v=5.21"></script>
-<script src="core/tokens.js?v=5.21"></script>
-<script src="core/vector.js?v=5.21"></script>
-<script src="core/imagegen.js?v=5.21"></script>
-<script src="core/snapshot.js?v=5.21"></script>
-<script src="core/gallery.js?v=5.21"></script>
-<script src="core/cg.js?v=5.21"></script>
-<script src="core/resolver.js?v=5.21"></script>
-<script src="core/worldbook.js?v=5.21"></script>
-<script src="core/regex.js?v=5.21"></script>
-<script src="core/prompt.js?v=5.21"></script>
-<script src="core/script.js?v=5.21"></script>
-<script src="core/phone.js?v=5.21"></script>
-<script src="core/engine.js?v=5.21"></script>
-<script src="core/api.js?v=5.21"></script>
-<script src="core/savetree.js?v=5.21"></script>
-<script src="core/storage.js?v=5.21"></script>
-<script src="core/editors.js?v=5.21"></script>
-<script src="app/app.js?v=5.21"></script>
+<script src="core/crash.js?v=5.22"></script>
+<script src="core/cardres.js?v=5.22"></script>
+<script src="core/tokens.js?v=5.22"></script>
+<script src="core/vector.js?v=5.22"></script>
+<script src="core/imagegen.js?v=5.22"></script>
+<script src="core/snapshot.js?v=5.22"></script>
+<script src="core/gallery.js?v=5.22"></script>
+<script src="core/cg.js?v=5.22"></script>
+<script src="core/resolver.js?v=5.22"></script>
+<script src="core/worldbook.js?v=5.22"></script>
+<script src="core/regex.js?v=5.22"></script>
+<script src="core/prompt.js?v=5.22"></script>
+<script src="core/script.js?v=5.22"></script>
+<script src="core/phone.js?v=5.22"></script>
+<script src="core/engine.js?v=5.22"></script>
+<script src="core/api.js?v=5.22"></script>
+<script src="core/savetree.js?v=5.22"></script>
+<script src="core/storage.js?v=5.22"></script>
+<script src="core/editors.js?v=5.22"></script>
+<script src="app/app.js?v=5.22"></script>
 </body>
 </html>

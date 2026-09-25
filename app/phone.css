@@ -357,3 +357,12 @@
 .dc-tags .t-cloth{background:rgba(190,150,240,.12);color:#7a52aa;border-color:rgba(190,150,240,.35)}
 .dc-tags .t-mood{background:rgba(255,171,92,.14);color:#c47a26;border-color:rgba(255,171,92,.38)}
 .ph-typing{font-size:12px;color:#8ba3b8;padding:6px 12px;font-style:italic}
+
+/* 简报卡和图标坞的内边距。phone-inner.css 里有 #jup-root *{padding:0}（ID 权重），
+   上面按类写的 padding 全被压成 0 —— 简报的字贴着边、图标坞没有留白。带上 #jup-root 才压得过 */
+#jup-root .ph-widget{padding:20px 26px}
+#jup-root .ph-dock{padding:24px 32px}
+@media (max-width:1100px){
+  #jup-root .ph-widget{padding:14px 16px}
+  #jup-root .ph-dock{padding:16px 18px}
+}

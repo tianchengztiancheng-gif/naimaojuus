@@ -1296,6 +1296,30 @@ console.log('\n[7d] 重roll / 撤回 / 版本切换 / 存档树（v5.21）');
   w.fetch = oldFetch;
 }
 
+console.log('\n[7e] 手机版式（v5.22）');
+{
+  const g = w.__gal, H = d.documentElement, $ = id => d.getElementById(id);
+  ok('默认按电脑排（jsdom 没有触屏）', H.classList.contains('m-pc') && !H.classList.contains('m-mobile'));
+  ok('开场引导有显示模式选择', d.querySelectorAll('#boot .boot-device [data-dev]').length === 3);
+  ok('外观设置里也能切', d.querySelectorAll('#tune [data-dev]').length === 3);
+  ok('手机版式样式表最后加载', /app\/mobile\.css/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+  g.setDevice('mobile');
+  ok('切到手机：加上 m-mobile 和横竖屏类', H.classList.contains('m-mobile') && !H.classList.contains('m-pc') &&
+     (H.classList.contains('m-port') || H.classList.contains('m-land')));
+  ok('手机模式输入框提示语变短', !/Shift/.test($('usertext').placeholder));
+  const line = { who: '长门', narration: false, sprites: [{ who: '柴郡' }, { who: '贝尔法斯特' }, { who: '长门' }] };
+  H.classList.add('m-port'); H.classList.remove('m-land');
+  ok('竖屏：台上只站说话的那一个', g.stageFor(line).length === 1 && g.stageFor(line)[0].who === '长门');
+  ok('竖屏旁白：留着一个人，不是空台', g.stageFor(Object.assign({}, line, { narration: true, who: '' })).length === 1);
+  H.classList.remove('m-port'); H.classList.add('m-land');
+  ok('横屏：多人同台', g.stageFor(line).length === 3);
+  ok('小手机顶上有返回 / 收起键', !!$('ph-m-back') && !!$('ph-m-close'));
+  g.setDevice('pc');
+  ok('切回电脑：手机类全摘掉', H.classList.contains('m-pc') && !/m-mobile|m-port|m-land/.test(H.className));
+  ok('电脑模式同台不受影响', g.stageFor(line).length === 3);
+  g.setDevice('auto');
+}
+
 console.log('\n[8] 运行期未捕获错误');
 ok('无 window error', errors.length === 0, errors.slice(0, 3).join(' | '));
 

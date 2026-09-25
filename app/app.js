@@ -97,6 +97,98 @@
     });
   }
 
+  /* ============================================================
+     设备模式：电脑 / 手机（手机再分竖屏、横屏）
+     ============================================================
+     有人反馈手机上没法玩：立绘挤成一团、小手机的返回键被系统栏挡住点不了、
+     横屏时小手机被裁掉一半。手机端单独一套版式（app/mobile.css），开局界面可以选，
+     默认按设备自动判断。<html> 上的类：
+       m-pc                 电脑（就是原来的样子，一点不动）
+       m-mobile m-port      手机竖屏：台上只站说话的那一个人，字和按钮放大
+       m-mobile m-land      手机横屏：多人同台，对话框压扁，选项排两列
+     index.html 的 <head> 里有一段内联脚本在第一帧之前就把类加上，免得先闪一下电脑版。 */
+  var H = document.documentElement;
+  var mqPort = window.matchMedia ? window.matchMedia('(orientation: portrait)') : null;
+  function autoDevice() {
+    try {
+      var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+      var small = Math.min(screen.width || 9999, screen.height || 9999) <= 820;
+      return coarse && small ? 'mobile' : 'pc';
+    } catch (e) { return 'pc'; }
+  }
+  function devicePref() {
+    try { return localStorage.getItem('gal_device') || 'auto'; } catch (e) { return 'auto'; }
+  }
+  function deviceNow() { return H.classList.contains('m-mobile') ? 'mobile' : 'pc'; }
+  function isPortraitPhone() { return H.classList.contains('m-port'); }
+  function applyDeviceClasses() {
+    var pref = devicePref();
+    var dev = pref === 'pc' || pref === 'mobile' ? pref : autoDevice();
+    var port = mqPort ? mqPort.matches : window.innerHeight >= window.innerWidth;
+    H.classList.toggle('m-mobile', dev === 'mobile');
+    H.classList.toggle('m-pc', dev !== 'mobile');
+    H.classList.toggle('m-port', dev === 'mobile' && port);
+    H.classList.toggle('m-land', dev === 'mobile' && !port);
+    H.dataset.devAuto = autoDevice();
+  }
+  /** 版式变了（切设备 / 转屏）：把当前这句按新规则重摆一遍 */
+  function onLayoutChange() {
+    PA2('[data-dev]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-dev') === devicePref() ||
+        (devicePref() === 'auto' && b.getAttribute('data-dev') === 'auto'));
+    });
+    var hint = $('dev-auto');
+    if (hint) hint.textContent = '自动识别：' + (autoDevice() === 'mobile' ? '手机' : '电脑') +
+      (deviceNow() === 'mobile' ? (isPortraitPhone() ? ' · 竖屏' : ' · 横屏') : '');
+    var ut = $('usertext');
+    if (ut) ut.placeholder = deviceNow() === 'mobile' ? '你的行动或台词…'
+      : '你的行动或台词…（Enter 发送，Shift+Enter 换行）';
+    if (typeof eng !== 'undefined' && eng.log && eng.log[qi] && !$('dialogue').hidden) {
+      applyStage(stageFor(eng.log[qi]));
+      if (!eng.log[qi].narration) highlight(eng.log[qi].who);
+    }
+    if (typeof refreshDlgHeight === 'function') refreshDlgHeight();
+  }
+  function setDevice(pref) {
+    try { localStorage.setItem('gal_device', pref); } catch (e) {}
+    applyDeviceClasses();
+    onLayoutChange();
+  }
+  applyDeviceClasses();
+  if (mqPort) {
+    var onOrient = function () { applyDeviceClasses(); onLayoutChange(); };
+    if (mqPort.addEventListener) mqPort.addEventListener('change', onOrient);
+    else if (mqPort.addListener) mqPort.addListener(onOrient);
+  }
+  var resizeT = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(function () {
+      var before = H.className;
+      applyDeviceClasses();
+      if (H.className !== before) onLayoutChange();
+    }, 120);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-dev]') : null;
+    if (b) { e.preventDefault(); setDevice(b.getAttribute('data-dev')); }
+  });
+
+  /**
+   * 这一句台上站谁。手机竖屏屏幕窄，三个人并排会挤成一团、脸全被对话框挡住 ——
+   * 只站说话的那一个；旁白时留着刚才那个人。横屏和电脑照旧多人同台。
+   */
+  var lastSpeaker = '';
+  function stageFor(m) {
+    var sp = (m && m.sprites) || [];
+    if (!isPortraitPhone() || sp.length <= 1) return sp;
+    var who = m.narration ? lastSpeaker : m.who;
+    var hit = sp.filter(function (s) { return String(who || '').indexOf(s.who) >= 0; })[0];
+    if (hit) return [hit];
+    var keep = stageNow[0] && sp.filter(function (s) { return s.who === stageNow[0].who; })[0];
+    return [keep || sp[0]];
+  }
+
   /* 加载失败的图，给调试面板用。卡里那几千个 URL 挂在第三方图床上，
      死链是常态，不该让玩家看见浏览器的破图图标。 */
   var imgFails = [];
@@ -257,13 +349,13 @@
        等太久的话，图没缓存时对话框会空一秒多，看着就像"这句没显示"。
        立绘晚到就晚到，它自己会淡入，不该把台词一起拖住。 */
     var staged = Promise.race([
-      applyStage(m.sprites || []),
+      applyStage(stageFor(m)),
       new Promise(function (r) { setTimeout(r, opts.instant ? 0 : 400); })
     ]);
 
     staged.then(function () {
       if (token !== presentToken) return;
-      if (!m.narration) highlight(m.who);
+      if (!m.narration) { highlight(m.who); lastSpeaker = m.who; }
       setTimeout(function () {
         if (token !== presentToken) return;
         bodyEl.classList.remove('fading');
@@ -2744,6 +2836,12 @@
     renderWidget();
   }
   function closePhone() { $('phone-overlay').hidden = true; }
+  /* 手机模式下小手机铺满屏幕，没有「点外面关掉」的地方了，底部的圆键又容易被系统手势条挡住。
+     所以顶上常驻两个键：‹ 返回（逐级返回，到主屏再按就收起）和 ✕ 收起 */
+  function phoneBack() {
+    if ($('jup-root').classList.contains('at-home')) { closePhone(); return; }
+    goHome();
+  }
 
   function refreshPhoneBadge() {
     var n = phoneData().counts.total;
@@ -3640,7 +3738,10 @@
   function renderSkinPanel() {
     if ($('skin-panel').hidden) return;
     var box = $('skin-body');
-    var names = stageNow.map(function (c) { return c.who; });
+    /* 按这一句的全部登场角色列 —— 手机竖屏台上只站一个人，但换装要能换所有人 */
+    var curLine = eng.log[qi];
+    var names = ((curLine && curLine.sprites && curLine.sprites.length) ? curLine.sprites : stageNow)
+      .map(function (c) { return c.who; });
     /* 台上没人时退而列出变量里在场的 */
     if (!names.length) {
       var ppl = (eng.vars && eng.vars.人物) || {};
@@ -3799,7 +3900,7 @@
   function refreshStageSprites(names) {
     if (names) refreshSpritesFor(names);
     var m = eng.log[qi];
-    if (m) applyStage(m.sprites || []);
+    if (m) applyStage(stageFor(m));
   }
 
   $('btn-skin').onclick = function () {
@@ -3868,9 +3969,15 @@
       var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) +
                 parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
       /* 选项区在 #dlg-body 外面，不算进去的话会溢出对话框 */
-      var extra = choicesEl.hidden ? 0 : (choicesEl.offsetHeight + 10);
+      /* 用 scrollHeight 不用 offsetHeight：对话框本身太矮时选项区已经被压扁了，
+         量到的是压扁后的高度，算出来的对话框就一直偏矮（小屏上选项会盖住正文） */
+      var extra = choicesEl.hidden ? 0 : (choicesEl.scrollHeight + 10);
       var need = Math.ceil(bodyEl.scrollHeight + extra + pad);
-      var maxH = Math.max(120, Math.floor($('stage').clientHeight * 0.72));
+      /* 手机上对话框最多占半屏，不然人全被挡住（横屏本来就矮） */
+      var withChoices = !choicesEl.hidden;
+      var capK = isPortraitPhone() ? (withChoices ? 0.62 : 0.5)
+               : H.classList.contains('m-land') ? (withChoices ? 0.7 : 0.56) : 0.72;
+      var maxH = Math.max(120, Math.floor($('stage').clientHeight * capK));
       if (need > maxH) { dlg.classList.add('is-capped'); dlg.style.height = maxH + 'px'; }
       else { dlg.classList.remove('is-capped'); dlg.style.height = need + 'px'; }
     });
@@ -4306,6 +4413,8 @@
     if ($('phone-overlay').hidden) openPhone(); else closePhone();
   };
   $('phone-overlay').onclick = function (e) { if (e.target === this) closePhone(); };
+  $('ph-m-back').onclick = function (e) { e.stopPropagation(); phoneBack(); };
+  $('ph-m-close').onclick = function (e) { e.stopPropagation(); closePhone(); };
   $('nav-prev').onclick = function (e) { e.stopPropagation(); back(); };
   $('nav-next').onclick = function (e) { e.stopPropagation(); advance(); };
   $('nav-first').onclick = function (e) { e.stopPropagation(); goTo(0, { instant: true }); };
@@ -4335,10 +4444,12 @@
     openSaves: openSaves, renderSlots: renderSlots, doSave: doSave, pruneAuto: pruneAuto,
     turnStack: function () { return turnStack; },
     activeNode: function () { return activeNode; },
-    submit: function (t) { return submit(t); }
+    submit: function (t) { return submit(t); },
+    setDevice: setDevice, stageFor: stageFor, phoneBack: phoneBack
   };
 
   /* 恢复上次的素材与配置 */
+  onLayoutChange();           // 设备选择按钮的高亮、输入框提示语
   loadCfgToForm();
   loadUserRegex();
   Promise.all([GalStore.getCard(), GalStore.getPreset(), GalStore.loadSlot('auto')])
