@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Gal 引擎</title>
 <!-- 设备模式（电脑 / 手机竖屏 / 手机横屏）要在第一帧之前定下来，不然手机上会先闪一下电脑版。
-     逻辑和 app.js 里的 applyDeviceClasses() 一致：localStorage 里选过就用选的，没选过按设备自动判断 -->
+     逻辑和 app.js 里的 applyDeviceClasses() 一致：localStorage 里选过就用选的，没选过按设备自动判断；横竖屏同理（gal_orient） -->
 <script>
 (function () {
   try {
@@ -16,21 +16,30 @@
     var auto = (matchMedia('(pointer:coarse)').matches &&
                 Math.min(screen.width, screen.height) <= 820) ? 'mobile' : 'pc';
     var dev = pref === 'pc' || pref === 'mobile' ? pref : auto;
-    var port = matchMedia('(orientation: portrait)').matches;
+    var phys = matchMedia('(orientation: portrait)').matches;
+    var o = localStorage.getItem('gal_orient');
+    var port = o === 'port' ? true : o === 'land' ? false : phys;
     h.classList.add(dev === 'mobile' ? 'm-mobile' : 'm-pc');
     if (dev === 'mobile') h.classList.add(port ? 'm-port' : 'm-land');
+    /* 手动选的方向和手机拿的方向不一样：整页转 90°（见 app.js 的 applyDeviceClasses） */
+    if (dev === 'mobile' && port !== phys) {
+      h.classList.add('m-rot', port ? 'm-rot-ccw' : 'm-rot-cw');
+      h.style.setProperty('--rw', innerHeight + 'px');
+      h.style.setProperty('--rh', innerWidth + 'px');
+    }
+    if (localStorage.getItem('gal_tb_hidden') === '1') h.classList.add('tb-hidden');
   } catch (e) {}
 })();
 </script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.22">
+<link rel="stylesheet" href="app/style.css?v=5.23">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.22">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.23">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.22">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.22">
+<link rel="stylesheet" href="app/phone.css?v=5.23">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.23">
 <!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
-<link rel="stylesheet" href="app/mobile.css?v=5.22">
+<link rel="stylesheet" href="app/mobile.css?v=5.23">
 </head>
 <body>
 
@@ -87,12 +96,17 @@
   </div>
 
   <div id="toolbar" hidden>
+    <!-- 整排按钮包在 tb-items 里：最右边的 ‹ › 把手一按，整排滑回右边藏起来 -->
+    <div id="tb-items" class="tb-items">
+    <button id="btn-orient" class="m-only" title="切换横竖屏">横</button>
     <button id="btn-exit" title="保存并退出到开场（换个开局，或读别的存档）">⏻</button>
     <button id="btn-cgmode" title="CG 常驻：让 CG 盖住立绘，一直铺着推剧情">▣</button>
     <button id="btn-cg" title="CG / 相册">✿<i id="cg-dot" hidden></i></button>
     <button id="btn-skin" title="换装（在场舰娘的皮肤）">◈</button>
     <button id="btn-saves" title="存档 / 读档（每轮自动存，读旧的接着玩会长出分支）">▤</button>
     <button id="btn-phone" title="打开手机（剧情、状态、存档、外观、调试都在里面）">▢<i id="phone-dot" hidden></i></button>
+    </div>
+    <button id="btn-tbhide" title="收起工具栏" aria-expanded="true" aria-controls="tb-items"><i id="tb-dot" hidden></i></button>
   </div>
 
   <div id="skin-panel" hidden>
@@ -109,6 +123,9 @@
   <div id="tune" hidden>
     <div class="tune-dev">显示模式
       <span class="seg"><button type="button" data-dev="auto">自动</button><button type="button" data-dev="pc">电脑</button><button type="button" data-dev="mobile">手机</button></span>
+    </div>
+    <div class="tune-dev m-only">横竖屏
+      <span class="seg"><button type="button" data-orient="auto">跟随手机</button><button type="button" data-orient="port">竖屏</button><button type="button" data-orient="land">横屏</button></span>
     </div>
     <hr>
     <label>立绘大小 <span class="v" id="v-h">78%</span>
@@ -262,6 +279,12 @@
           <button type="button" data-dev="pc">💻 电脑</button>
           <button type="button" data-dev="mobile">📱 手机</button>
         </div>
+        <!-- 手机才有：手动定横竖屏。手机转不过来（方向锁 / 浏览器不转）时页面自己转 90° -->
+        <div class="seg m-only orient-seg" title="手机转不过来也能横屏：页面自己转，把手机横着拿">
+          <button type="button" data-orient="auto">跟随手机</button>
+          <button type="button" data-orient="port">竖屏</button>
+          <button type="button" data-orient="land">横屏</button>
+        </div>
         <span class="hint" id="dev-auto"></span>
       </div>
 
@@ -288,7 +311,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.22</span>
+        <span>gal 引擎 · v5.23</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -418,25 +441,25 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.22"></script>
-<script src="core/cardres.js?v=5.22"></script>
-<script src="core/tokens.js?v=5.22"></script>
-<script src="core/vector.js?v=5.22"></script>
-<script src="core/imagegen.js?v=5.22"></script>
-<script src="core/snapshot.js?v=5.22"></script>
-<script src="core/gallery.js?v=5.22"></script>
-<script src="core/cg.js?v=5.22"></script>
-<script src="core/resolver.js?v=5.22"></script>
-<script src="core/worldbook.js?v=5.22"></script>
-<script src="core/regex.js?v=5.22"></script>
-<script src="core/prompt.js?v=5.22"></script>
-<script src="core/script.js?v=5.22"></script>
-<script src="core/phone.js?v=5.22"></script>
-<script src="core/engine.js?v=5.22"></script>
-<script src="core/api.js?v=5.22"></script>
-<script src="core/savetree.js?v=5.22"></script>
-<script src="core/storage.js?v=5.22"></script>
-<script src="core/editors.js?v=5.22"></script>
-<script src="app/app.js?v=5.22"></script>
+<script src="core/crash.js?v=5.23"></script>
+<script src="core/cardres.js?v=5.23"></script>
+<script src="core/tokens.js?v=5.23"></script>
+<script src="core/vector.js?v=5.23"></script>
+<script src="core/imagegen.js?v=5.23"></script>
+<script src="core/snapshot.js?v=5.23"></script>
+<script src="core/gallery.js?v=5.23"></script>
+<script src="core/cg.js?v=5.23"></script>
+<script src="core/resolver.js?v=5.23"></script>
+<script src="core/worldbook.js?v=5.23"></script>
+<script src="core/regex.js?v=5.23"></script>
+<script src="core/prompt.js?v=5.23"></script>
+<script src="core/script.js?v=5.23"></script>
+<script src="core/phone.js?v=5.23"></script>
+<script src="core/engine.js?v=5.23"></script>
+<script src="core/api.js?v=5.23"></script>
+<script src="core/savetree.js?v=5.23"></script>
+<script src="core/storage.js?v=5.23"></script>
+<script src="core/editors.js?v=5.23"></script>
+<script src="app/app.js?v=5.23"></script>
 </body>
 </html>

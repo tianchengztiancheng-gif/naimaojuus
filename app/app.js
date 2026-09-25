@@ -121,14 +121,40 @@
   }
   function deviceNow() { return H.classList.contains('m-mobile') ? 'mobile' : 'pc'; }
   function isPortraitPhone() { return H.classList.contains('m-port'); }
+  /* 横竖屏手动选：localStorage gal_orient = auto（跟着手机转）/ port / land。
+     有人反馈「手机捣鼓半天切换不了横屏」—— 开了方向锁，或者浏览器压根不转。所以：
+       · 选了横屏、手机却还竖着 → 整页转 90° 画（html.m-rot m-rot-cw）：body 按横过来的宽高
+         摆好再旋转贴满屏幕，玩家把手机横过来拿就行，不用管系统转不转
+       · 反过来（手机横着、选了竖屏）→ 逆时针转（m-rot-ccw）
+       · 安卓 Chrome 顺手试一下真锁横屏（要先进全屏），锁上了手机真转过来，就不用 CSS 转
+     --rw/--rh 是转过来之后 body 的宽和高（= 屏幕的高和宽）。电脑模式不管这个设置。 */
+  function orientPref() {
+    try {
+      var v = localStorage.getItem('gal_orient');
+      return v === 'port' || v === 'land' ? v : 'auto';
+    } catch (e) { return 'auto'; }
+  }
+  function physPort() { return mqPort ? mqPort.matches : window.innerHeight >= window.innerWidth; }
   function applyDeviceClasses() {
     var pref = devicePref();
     var dev = pref === 'pc' || pref === 'mobile' ? pref : autoDevice();
-    var port = mqPort ? mqPort.matches : window.innerHeight >= window.innerWidth;
-    H.classList.toggle('m-mobile', dev === 'mobile');
-    H.classList.toggle('m-pc', dev !== 'mobile');
-    H.classList.toggle('m-port', dev === 'mobile' && port);
-    H.classList.toggle('m-land', dev === 'mobile' && !port);
+    var mob = dev === 'mobile', phys = physPort(), o = orientPref();
+    var port = o === 'auto' ? phys : o === 'port';
+    var rot = mob && port !== phys;
+    H.classList.toggle('m-mobile', mob);
+    H.classList.toggle('m-pc', !mob);
+    H.classList.toggle('m-port', mob && port);
+    H.classList.toggle('m-land', mob && !port);
+    H.classList.toggle('m-rot', rot);
+    H.classList.toggle('m-rot-cw', rot && !port);
+    H.classList.toggle('m-rot-ccw', rot && port);
+    if (rot) {
+      H.style.setProperty('--rw', window.innerHeight + 'px');
+      H.style.setProperty('--rh', window.innerWidth + 'px');
+    } else {
+      H.style.removeProperty('--rw');
+      H.style.removeProperty('--rh');
+    }
     H.dataset.devAuto = autoDevice();
   }
   /** 版式变了（切设备 / 转屏）：把当前这句按新规则重摆一遍 */
@@ -137,9 +163,19 @@
       b.classList.toggle('on', b.getAttribute('data-dev') === devicePref() ||
         (devicePref() === 'auto' && b.getAttribute('data-dev') === 'auto'));
     });
+    PA2('[data-orient]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-orient') === orientPref());
+    });
+    var ob = $('btn-orient');
+    if (ob) {
+      ob.textContent = isPortraitPhone() ? '横' : '竖';
+      ob.title = isPortraitPhone() ? '切到横屏（手机转不过来也行：页面自己转，把手机横着拿）'
+                                   : '切回竖屏';
+    }
     var hint = $('dev-auto');
     if (hint) hint.textContent = '自动识别：' + (autoDevice() === 'mobile' ? '手机' : '电脑') +
-      (deviceNow() === 'mobile' ? (isPortraitPhone() ? ' · 竖屏' : ' · 横屏') : '');
+      (deviceNow() === 'mobile' ? (isPortraitPhone() ? ' · 竖屏' : ' · 横屏') +
+        (orientPref() === 'auto' ? '' : '（手动）') : '');
     var ut = $('usertext');
     if (ut) ut.placeholder = deviceNow() === 'mobile' ? '你的行动或台词…'
       : '你的行动或台词…（Enter 发送，Shift+Enter 换行）';
@@ -154,6 +190,74 @@
     applyDeviceClasses();
     onLayoutChange();
   }
+  var ourFs = false;
+  function setOrient(o) {
+    try { localStorage.setItem('gal_orient', o); } catch (e) {}
+    applyDeviceClasses();
+    onLayoutChange();
+    realOrient(o);
+  }
+  /** 能真转就真转（安卓 Chrome：全屏后 screen.orientation.lock）。转不了也没关系，CSS 已经转好了。
+      必须在点击里同步调用 —— 全屏只认用户手势。 */
+  function realOrient(o) {
+    var so = window.screen && screen.orientation;
+    if (deviceNow() !== 'mobile' || !so || !so.lock) return;
+    if (o !== 'land') {
+      try { so.unlock(); } catch (e) {}
+      if (ourFs && document.fullscreenElement && document.exitFullscreen) {
+        try { document.exitFullscreen().catch(function () {}); } catch (e) {}
+      }
+      return;
+    }
+    if (!physPort()) return;
+    var lock = function () {
+      try { var p = so.lock('landscape'); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+    };
+    if (document.fullscreenElement || !H.requestFullscreen) { lock(); return; }
+    try {
+      var p = H.requestFullscreen({ navigationUI: 'hide' });
+      if (p && p.then) p.then(function () { ourFs = true; lock(); }, function () {});
+    } catch (e) {}
+  }
+  document.addEventListener('fullscreenchange', function () {
+    if (!document.fullscreenElement) ourFs = false;
+    applyDeviceClasses();
+    onLayoutChange();
+  });
+
+  /* 右上角工具栏可以收起：一按整排滑回右边，只留一个小把手。收起时有新东西（手机消息、新 CG）
+     把手上亮小红点。记在 gal_tb_hidden。 */
+  function tbHidden() {
+    try { return localStorage.getItem('gal_tb_hidden') === '1'; } catch (e) { return false; }
+  }
+  function refreshTbDot() {
+    var d = $('tb-dot');
+    if (!d) return;
+    var news = ($('cg-dot') && !$('cg-dot').hidden) || ($('phone-dot') && !$('phone-dot').hidden);
+    d.hidden = !(tbHidden() && news);
+  }
+  function applyTb() {
+    var tb = $('toolbar'), on = tbHidden();
+    if (!tb) return;
+    tb.classList.toggle('collapsed', on);
+    H.classList.toggle('tb-hidden', on);
+    var items = $('tb-items');
+    if (items) {
+      if (on) items.setAttribute('inert', ''); else items.removeAttribute('inert');
+      items.setAttribute('aria-hidden', on ? 'true' : 'false');
+    }
+    var b = $('btn-tbhide');
+    if (b) {
+      b.title = on ? '展开工具栏' : '收起工具栏';
+      b.setAttribute('aria-expanded', on ? 'false' : 'true');
+    }
+    refreshTbDot();
+  }
+  function setTbHidden(on) {
+    try { localStorage.setItem('gal_tb_hidden', on ? '1' : '0'); } catch (e) {}
+    applyTb();
+  }
+
   applyDeviceClasses();
   if (mqPort) {
     var onOrient = function () { applyDeviceClasses(); onLayoutChange(); };
@@ -171,8 +275,17 @@
   });
   document.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-dev]') : null;
-    if (b) { e.preventDefault(); setDevice(b.getAttribute('data-dev')); }
+    if (b) { e.preventDefault(); setDevice(b.getAttribute('data-dev')); return; }
+    var o = e.target.closest ? e.target.closest('[data-orient]') : null;
+    if (o) { e.preventDefault(); setOrient(o.getAttribute('data-orient')); return; }
+    if (e.target.closest && e.target.closest('#btn-orient')) {
+      e.preventDefault(); setOrient(isPortraitPhone() ? 'land' : 'port'); return;
+    }
+    if (e.target.closest && e.target.closest('#btn-tbhide')) {
+      e.preventDefault(); setTbHidden(!tbHidden());
+    }
   });
+  applyTb();
 
   /**
    * 这一句台上站谁。手机竖屏屏幕窄，三个人并排会挤成一团、脸全被对话框挡住 ——
@@ -533,6 +646,7 @@
   function markCGNew(on) {
     cgNew = on;
     $('cg-dot').hidden = !on;
+    refreshTbDot();
   }
 
   /** 一轮演完后异步出图。不阻塞推进 —— NAI 一张要十几秒。 */
@@ -2849,6 +2963,7 @@
   function refreshPhoneBadge() {
     var n = phoneData().counts.total;
     $('phone-dot').hidden = !(n > phoneSeen);
+    refreshTbDot();
   }
 
   /* ============================================================
@@ -4452,7 +4567,8 @@
     turnStack: function () { return turnStack; },
     activeNode: function () { return activeNode; },
     submit: function (t) { return submit(t); },
-    setDevice: setDevice, stageFor: stageFor, phoneBack: phoneBack
+    setDevice: setDevice, setOrient: setOrient, setTbHidden: setTbHidden,
+    stageFor: stageFor, phoneBack: phoneBack
   };
 
   /* 恢复上次的素材与配置 */

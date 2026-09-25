@@ -1,6 +1,6 @@
 {
   "name": "gal-engine",
-  "version": "5.22.0",
+  "version": "5.23.0",
   "description": "一个从 index.html 直接双击就能跑的 galgame 前端引擎，不依赖 SillyTavern",
   "private": true,
   "type": "commonjs",

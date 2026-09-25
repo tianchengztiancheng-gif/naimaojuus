@@ -1320,6 +1320,36 @@ console.log('\n[7e] 手机版式（v5.22）');
   g.setDevice('auto');
 }
 
+console.log('\n[7f] 手动横竖屏 + 工具栏收起（v5.23）');
+{
+  const g = w.__gal, H = d.documentElement, $ = id => d.getElementById(id);
+  ok('开场引导和外观设置里都有横竖屏选择', d.querySelectorAll('#boot [data-orient]').length === 3 &&
+     d.querySelectorAll('#tune [data-orient]').length === 3);
+  ok('工具栏有横竖屏键（只在手机显示）', $('btn-orient') && $('btn-orient').classList.contains('m-only'));
+  g.setDevice('mobile');                       // jsdom 的 matchMedia 永远 false：当成横着拿
+  ok('跟随手机：横着拿就是横屏，不转', H.classList.contains('m-land') && !H.classList.contains('m-rot'));
+  g.setOrient('port');
+  ok('横着拿选竖屏：按竖屏排，逆时针转', H.classList.contains('m-port') && H.classList.contains('m-rot-ccw'));
+  ok('转的时候给了 body 宽高', /px$/.test(H.style.getPropertyValue('--rw')) && /px$/.test(H.style.getPropertyValue('--rh')));
+  ok('选的方向记住了', w.localStorage.getItem('gal_orient') === 'port');
+  ok('工具栏键变成「横」', $('btn-orient').textContent === '横');
+  $('btn-orient').click();
+  ok('点一下切回横屏，不再转', H.classList.contains('m-land') && !/m-rot/.test(H.className));
+  g.setDevice('pc');
+  g.setOrient('port');
+  ok('电脑模式不管横竖屏设置', H.classList.contains('m-pc') && !/m-port|m-land|m-rot/.test(H.className));
+  g.setOrient('auto'); g.setDevice('auto');
+  ok('收起把手在工具栏最后', $('toolbar').lastElementChild === $('btn-tbhide') && $('tb-items').contains($('btn-phone')));
+  $('btn-tbhide').click();
+  ok('一按收起：整排藏起来、不能 Tab 到', $('toolbar').classList.contains('collapsed') && $('tb-items').hasAttribute('inert') &&
+     w.localStorage.getItem('gal_tb_hidden') === '1');
+  $('phone-dot').hidden = false; g.setTbHidden(true);
+  ok('收起时有新消息，把手亮红点', !$('tb-dot').hidden);
+  $('btn-tbhide').click();
+  ok('再按展开，红点收掉', !$('toolbar').classList.contains('collapsed') && $('tb-dot').hidden && !$('tb-items').hasAttribute('inert'));
+  $('phone-dot').hidden = true;
+}
+
 console.log('\n[8] 运行期未捕获错误');
 ok('无 window error', errors.length === 0, errors.slice(0, 3).join(' | '));
 

@@ -39,9 +39,15 @@ html.m-land .layer{height:min(calc(var(--portrait-h) * 1.24),97%)}
 html.m-mobile #toolbar{top:calc(var(--safe-t) + 8px);right:calc(var(--safe-r) + 8px);gap:6px}
 html.m-mobile #toolbar button{width:40px;height:40px;border-radius:10px;font-size:17px}
 html.m-mobile #envbar{top:calc(var(--safe-t) + 8px);left:calc(var(--safe-l) + 8px);
-  max-width:calc(100vw - 320px);font-size:12px;padding:6px 11px;line-height:1.5}
-/* 竖屏右上角已经排了六个键，环境条挪到它们下面一行 */
-html.m-port #envbar{top:calc(var(--safe-t) + 56px);max-width:calc(100vw - 16px - var(--safe-l) - var(--safe-r))}
+  max-width:calc(100% - 380px);font-size:12px;padding:6px 11px;line-height:1.5}
+/* 竖屏右上角已经排了一排键，环境条挪到它们下面一行；工具栏收起了就回到顶上 */
+html.m-port #envbar{top:calc(var(--safe-t) + 54px);max-width:calc(100% - 16px - var(--safe-l) - var(--safe-r))}
+html.m-mobile.tb-hidden #envbar{max-width:calc(100% - 60px - var(--safe-l) - var(--safe-r))}
+html.m-port.tb-hidden #envbar{top:calc(var(--safe-t) + 8px)}
+/* 竖屏一排八个键（含横竖屏、收起把手）：键间距收窄，360 宽的小手机也放得下 */
+html.m-port #toolbar{gap:4px}
+html.m-mobile #toolbar #btn-tbhide{width:26px;font-size:20px}
+html.m-mobile #toolbar #btn-orient{font-size:14px;font-weight:600;color:#bfe6f5}
 
 /* ---- 对话框 ---- */
 html.m-mobile #dialogue{left:calc(var(--safe-l) + 8px);right:calc(var(--safe-r) + 8px);
@@ -92,6 +98,7 @@ html.m-port #dialogue:has(~ #inputbar #turn-ver:not([hidden])){bottom:calc(var(-
 html.m-mobile #cg-busy{top:calc(var(--safe-t) + 56px);bottom:auto;left:calc(var(--safe-l) + 8px)}
 html.m-port #cg-busy{top:calc(var(--safe-t) + 100px)}
 html.m-mobile #gal-toast{top:calc(var(--safe-t) + 58px);width:calc(100vw - 16px - var(--safe-l) - var(--safe-r))}
+html.m-rot #gal-toast{width:calc(var(--rw) - 16px - var(--safe-l) - var(--safe-r))}
 html.m-mobile .gal-toast-item{font-size:14px;padding:11px 14px}
 html.m-mobile #spinner{font-size:14px;padding:12px 18px}
 html.m-mobile #spinner button{min-height:34px;padding:0 14px;font-size:13px}
@@ -260,3 +267,34 @@ html.m-land #jup-root .ph-dock{padding:12px 16px}
 /* 正文区不许被选项挤扁（dlg-auto 下 #dlg-body 默认可收缩、#text 又是 overflow:visible，
    一收缩正文就溢出来压在选项上）。挤不下时让选项区自己滚 */
 html.m-mobile.dlg-auto #dialogue:not(.is-capped) #dlg-body{flex-shrink:0}
+
+/* ============================== 手动横竖屏：整页转 90° ==============================
+ * html.m-rot：玩家手动选了横屏（或竖屏），手机却没跟着转（方向锁 / 浏览器不转）。
+ * body 按转过来之后的宽高摆（--rw × --rh，app.js 按 innerHeight × innerWidth 填），
+ * 以左上角为原点旋转、平移回屏幕里。fixed 的东西以 transform 过的 body 为包含块，跟着一起转。
+ *   m-rot-cw ：竖着拿的手机画横屏，顺时针 90°（手机逆时针横过来看）
+ *   m-rot-ccw：横着拿的手机画竖屏，逆时针 90°
+ * 注意：vw/vh 和按宽度的 @media 还是按手机实际拿的方向算，下面把用到的地方补回来。
+ * ================================================================================== */
+html.m-rot,html.m-rot body{overflow:hidden}
+html.m-rot body{position:fixed;top:0;left:0;margin:0;width:var(--rw);height:var(--rh);transform-origin:0 0}
+html.m-rot-cw body{transform:translateX(var(--rh)) rotate(90deg)}
+html.m-rot-ccw body{transform:translateY(var(--rw)) rotate(-90deg)}
+/* 刘海 / 系统栏也跟着换边：顺时针转时，画面的「上」是屏幕的右边 */
+html.m-rot-cw{--safe-t:env(safe-area-inset-right,0px);--safe-r:env(safe-area-inset-bottom,0px);
+  --safe-b:env(safe-area-inset-left,0px);--safe-l:env(safe-area-inset-top,0px)}
+html.m-rot-ccw{--safe-t:env(safe-area-inset-left,0px);--safe-r:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-right,0px);--safe-l:env(safe-area-inset-bottom,0px)}
+html.m-rot #stage{width:100%;height:100%}
+html.m-rot #boot .boot-shell{height:100%}
+html.m-rot .ph-frame{--w:var(--rw);--h:var(--rh)}
+/* 顺时针（画横屏）：实际视口是竖着的窄屏，max-width:680 的规则会误中，改回横屏该有的样子 */
+html.m-rot-cw #boot .grid2{grid-template-columns:1fr 1fr}
+html.m-rot-cw #boot .grid3{grid-template-columns:1fr 1fr auto}
+
+/* ---- 开场引导里的「横竖屏」：竖屏时单独一行铺满，按钮字不折行 ---- */
+html.m-mobile #boot .boot-device{flex-wrap:wrap;gap:6px 8px}
+html.m-mobile #boot .boot-device .seg button{white-space:nowrap}
+html.m-port #boot .boot-device .seg{flex:1 1 auto}
+html.m-port #boot .boot-device .seg button{flex:1 1 0}
+html.m-port #boot .boot-device .orient-seg{flex-basis:100%}

@@ -10,6 +10,8 @@
  *   · 小手机铺满屏幕，顶上的「返回」「收起」看得见、点得到、真能用
  *   · 存档、换装这些弹层的关闭键点得到
  *   · 电脑模式下一条手机样式都不生效；开局界面能手动切模式
+ *   · 手动横竖屏：手机转不过来（方向锁）也能横屏 —— 页面自己转 90°，按钮都点得到
+ *   · 工具栏一按整排收起、再按回来，收起时有新消息把手亮红点
  *
  * 用法：node tools/e2e-mobile.mjs [要测的目录] [截图输出目录]
  * ============================================================ */
@@ -238,6 +240,140 @@ console.log('\n[电脑模式不受影响 + 手动切换]');
   await p.reload();
   await p.waitForTimeout(400);
   ok('刷新后还是电脑版（第一帧就是，不闪）', await p.evaluate(() => document.documentElement.classList.contains('m-pc')));
+  await ctx.close();
+}
+
+console.log('\n[手动横竖屏：手机转不过来也能横屏]');
+{
+  /* 有人反馈「手机捣鼓半天切换不了横屏」（方向锁 / 浏览器不转）。
+     手机一直竖着拿（视口 390×844 不变），点工具栏的「横」→ 整页转 90° 按横屏排。 */
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const p = await ctx.newPage();
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('file://' + ROOT + '/index.html');
+  await p.waitForTimeout(500);
+  const os = await probe(p, '#boot .orient-seg [data-orient="land"]');
+  ok('开场引导里有「横竖屏」选择，看得见', os.inView && os.onTop, JSON.stringify(os));
+  await p.screenshot({ path: `${OUT}/m-rot-0boot.png` });
+  await start(p);
+  await goLine(p, 3);
+  ok('竖着：台上一个人', await chars(p) === 1);
+  const ob = await probe(p, '#btn-orient');
+  ok('工具栏上有横竖屏按钮，点得到', ob.inView && ob.onTop && ob.w >= 40, JSON.stringify(ob));
+  await p.click('#btn-orient');
+  await p.waitForTimeout(900);
+  const cls = await p.evaluate(() => document.documentElement.className);
+  ok('点一下就按横屏排（手机没转，页面自己转 90°）', /m-land/.test(cls) && /m-rot-cw/.test(cls) && !/m-port/.test(cls), cls);
+  ok('记住了手动选的方向', await p.evaluate(() => localStorage.getItem('gal_orient')) === 'land');
+  ok('横屏：三个人都上台', await chars(p) === 3, await chars(p));
+  const st = await probe(p, '#stage');
+  ok('舞台转过来正好铺满屏幕', Math.abs(st.w - 390) <= 1 && Math.abs(st.h - 844) <= 1 && Math.abs(st.left) <= 1 && Math.abs(st.top) <= 1, JSON.stringify(st));
+  const dims = await p.evaluate(() => ({ w: document.getElementById('stage').clientWidth, h: document.getElementById('stage').clientHeight,
+    sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight }));
+  ok('舞台自己的宽高是横的（844×390）', dims.w === 844 && dims.h === 390, JSON.stringify(dims));
+  ok('转过来之后整页不滚动、不溢出', dims.sw <= 391 && dims.sh <= 845, JSON.stringify(dims));
+  for (const id of ['#btn-phone', '#btn-orient', '#btn-tbhide', '#send', '#usertext', '#nav-next']) {
+    const r = await probe(p, id);
+    ok(id + ' 转过来之后在屏幕里、点得到', r.inView && r.onTop, JSON.stringify(r));
+  }
+  const lab = await p.evaluate(() => document.getElementById('btn-orient').textContent);
+  ok('按钮变成「竖」（再按切回竖屏）', lab === '竖', lab);
+  await p.screenshot({ path: `${OUT}/m-rot-1land.png` });
+  await p.click('#choices button >> nth=0').catch(() => {});
+  await p.waitForTimeout(200);
+  await p.evaluate(() => document.getElementById('usertext').blur());
+  await p.click('#btn-phone');
+  await p.waitForTimeout(500);
+  const back = await probe(p, '#ph-m-back'), fr = await probe(p, '#jup-root');
+  ok('转过来的小手机：「返回」点得到', back.inView && back.onTop, JSON.stringify(back));
+  ok('转过来的小手机铺满屏幕', Math.abs(fr.w - 390) <= 1 && Math.abs(fr.h - 844) <= 1, JSON.stringify(fr));
+  await p.screenshot({ path: `${OUT}/m-rot-2phone.png` });
+  await p.click('#ph-m-back');
+  await p.waitForTimeout(300);
+  await p.reload();
+  await p.waitForTimeout(50);
+  ok('刷新后第一帧就是转好的横屏', await p.evaluate(() => document.documentElement.classList.contains('m-rot-cw')));
+  await p.waitForTimeout(500);
+  await start(p);
+  await p.click('#btn-orient');
+  await p.waitForTimeout(600);
+  const c2 = await p.evaluate(() => document.documentElement.className);
+  ok('再按一下切回竖屏，不再转', /m-port/.test(c2) && !/m-rot/.test(c2), c2);
+  /* 手机能转的：选了横屏再真把手机横过来 → 不用再转 */
+  await p.evaluate(() => window.__gal.setOrient('land'));
+  await p.setViewportSize({ width: 844, height: 390 });
+  await p.waitForTimeout(700);
+  const c3 = await p.evaluate(() => document.documentElement.className);
+  ok('手机真横过来了：直接横屏，不转', /m-land/.test(c3) && !/m-rot/.test(c3), c3);
+  await p.setViewportSize({ width: 390, height: 844 });
+  await p.waitForTimeout(700);
+  ok('选了横屏后再竖着拿：还是横屏（手动选的优先）', await p.evaluate(() =>
+    document.documentElement.classList.contains('m-land') && document.documentElement.classList.contains('m-rot-cw')));
+  await p.evaluate(() => window.__gal.setOrient('auto'));
+  await p.waitForTimeout(400);
+  ok('「跟随手机」：竖着拿就是竖屏', await p.evaluate(() => document.documentElement.classList.contains('m-port') &&
+    !document.documentElement.classList.contains('m-rot')));
+  ok('没有未捕获错误', errs.length === 0, errs.join(' | '));
+  await ctx.close();
+}
+{
+  /* 反过来：手机横着卡住了，想竖屏玩 */
+  const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const p = await ctx.newPage();
+  await p.goto('file://' + ROOT + '/index.html');
+  await p.waitForTimeout(400);
+  await start(p);
+  await goLine(p, 3);
+  await p.click('#btn-orient');
+  await p.waitForTimeout(800);
+  const cls = await p.evaluate(() => document.documentElement.className);
+  ok('横着拿点「竖」：按竖屏排，逆时针转', /m-port/.test(cls) && /m-rot-ccw/.test(cls), cls);
+  ok('竖屏：台上一个人', await chars(p) === 1, await chars(p));
+  for (const id of ['#btn-orient', '#send', '#nav-next']) {
+    const r = await probe(p, id);
+    ok(id + ' 在屏幕里、点得到', r.inView && r.onTop, JSON.stringify(r));
+  }
+  await p.screenshot({ path: `${OUT}/m-rot-3port.png` });
+  await ctx.close();
+}
+
+console.log('\n[工具栏收起]');
+for (const v of [{ name: '手机竖屏', w: 360, h: 640, mob: true }, { name: '电脑', w: 1280, h: 800, mob: false }]) {
+  const ctx = await b.newContext(v.mob ? { viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true }
+    : { viewport: { width: v.w, height: v.h } });
+  const p = await ctx.newPage();
+  await p.goto('file://' + ROOT + '/index.html');
+  await p.waitForTimeout(400);
+  await start(p);
+  const all = await p.evaluate(() => [...document.querySelectorAll('#toolbar button')].filter(x => x.offsetWidth).map(x => {
+    const r = x.getBoundingClientRect(); return { id: x.id, l: r.left, r: r.right }; }));
+  ok(v.name + '：一排键全在屏幕里', all.every(x => x.l >= 0 && x.r <= v.w), JSON.stringify(all));
+  ok(v.name + '：横竖屏按钮只在手机上有', (await p.evaluate(() => !!document.getElementById('btn-orient').offsetWidth)) === v.mob);
+  const hb = await probe(p, '#btn-tbhide');
+  ok(v.name + '：收起把手在最右边、点得到', hb.inView && hb.onTop && hb.right >= Math.max(...all.map(x => x.r)) - 1, JSON.stringify(hb));
+  await p.click('#btn-tbhide');
+  await p.waitForTimeout(500);
+  const hid = await p.evaluate(() => {
+    const e = document.getElementById('btn-phone'), r = e.getBoundingClientRect();
+    return { collapsed: document.getElementById('toolbar').classList.contains('collapsed'),
+      op: getComputedStyle(document.getElementById('tb-items')).opacity,
+      gone: r.left >= innerWidth - 1 || document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) !== e };
+  });
+  ok(v.name + '：一按整排收起来（滑走、点不到）', hid.collapsed && hid.op === '0' && hid.gone, JSON.stringify(hid));
+  const hb2 = await probe(p, '#btn-tbhide');
+  ok(v.name + '：收起后把手还在原地', hb2.inView && hb2.onTop && Math.abs(hb2.left - hb.left) <= 1, JSON.stringify(hb2));
+  if (v.mob) await p.screenshot({ path: `${OUT}/m-tb-hidden.png` });
+  await p.evaluate(() => { document.getElementById('phone-dot').hidden = false; window.__gal.setTbHidden(true); });
+  ok(v.name + '：收起时有新消息，把手上亮红点', await p.evaluate(() => !document.getElementById('tb-dot').hidden));
+  await p.reload();
+  await p.waitForTimeout(400);
+  await start(p);
+  ok(v.name + '：刷新后还是收起的', await p.evaluate(() => document.getElementById('toolbar').classList.contains('collapsed')));
+  await p.click('#btn-tbhide');
+  await p.waitForTimeout(500);
+  const ph = await probe(p, '#btn-phone');
+  ok(v.name + '：再按一下整排回来，按钮又能点', ph.inView && ph.onTop, JSON.stringify(ph));
+  ok(v.name + '：展开后红点收掉（红点回到各自按钮上）', await p.evaluate(() => document.getElementById('tb-dot').hidden));
   await ctx.close();
 }
 

@@ -1058,7 +1058,30 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
   和 `#ph-m-close` 常驻顶上；底部 `.ph-homebar` 隐藏。
 - **对话框高度** `refreshDlgHeight()`：上限按模式（电脑 72%，竖屏 50/62%，横屏 56/70%，斜杠后是有选项时）。
   选项高度要用 `scrollHeight`。
-- 测试：`tools/e2e-mobile.mjs`（144 项），冒烟 [7e]。想看样子可以跑它，截图在第二个参数指定的目录。
+- 测试：`tools/e2e-mobile.mjs`（v5.22 时 144 项），冒烟 [7e]。想看样子可以跑它，截图在第二个参数指定的目录。
+
+## 七·十五、手动横竖屏 / 工具栏收起（v5.23）
+
+- **方向设置** `localStorage.gal_orient`：auto（跟随手机）/ port / land。`applyDeviceClasses()` 里：
+  想要的方向 = 设置（auto 时 = 实际方向）；和实际方向不一样就加 `m-rot`，再加 `m-rot-cw`（竖着拿画横屏）或
+  `m-rot-ccw`（横着拿画竖屏），并在 `<html>` 上写 `--rw` / `--rh` = innerHeight / innerWidth。`index.html` 头部内联脚本同一套逻辑。
+- **怎么转**（`mobile.css` 最后一节）：`body` 设成 `position:fixed`、宽 `--rw` 高 `--rh`，`transform-origin:0 0`，
+  cw 是 `translateX(--rh) rotate(90deg)`，ccw 是 `translateY(--rw) rotate(-90deg)`。`fixed` 的弹层以 transform 过的 body
+  为包含块，跟着一起转。点击 / 滚动浏览器自己会换算，不用管坐标。
+- **转着的时候要当心的**：`vw` / `vh` 和按宽度的 `@media` 还是按手机实际拿的方向算。
+  所以手机版式里别再写 `100vw` / `100vh`，用 `100%`（`#envbar` 已改）；`m-rot` 下补了 `#stage`、开场引导外壳、
+  小手机外框、提示条的宽高，cw 时把被 `max-width:680px` 误改成一列的开场表单改回两列。
+  刘海 `--safe-*` 也按转的方向换边（cw 时画面的「上」= 屏幕右边）。`getBoundingClientRect()` 拿到的是转过之后
+  屏幕上的框，量布局要用 `clientWidth` / `offsetTop` 这些（`refreshDlgHeight()` 用的就是 `clientHeight`，没问题）。
+- **真锁屏** `realOrient()`：选横屏时在点击里同步调 `requestFullscreen()` → `screen.orientation.lock('landscape')`，
+  都是尽力而为，失败就静默（CSS 已经转好了）。锁上后手机真转过来，`m-rot` 自动摘掉。切回竖屏 / 跟随时 `unlock()`，
+  全屏是我们进的就退出。`fullscreenchange` 时重算（玩家用返回手势退全屏，锁也跟着没了）。
+- **工具栏收起**：按钮包在 `#tb-items` 里，`#btn-tbhide` 是最后一个子元素。收起 = `#toolbar.collapsed`
+  （`#tb-items` 用 transform 滑出去、透明、`inert`），`<html>` 上加 `tb-hidden` 给环境条让位。存 `gal_tb_hidden`。
+  `refreshTbDot()` 在 `markCGNew()` / `refreshPhoneBadge()` 里调：收起时 CG 或手机有红点，把手上的 `#tb-dot` 亮。
+- 工具栏往后再加键：手机竖屏一排现在是 7 个 40px 键 + 26px 把手 + 4px 间距 ≈ 334px，360 宽的手机正好放下，
+  再加就得在 `html.m-port` 下缩键或者换行了（`e2e-mobile` 的「一排键全在屏幕里」会报）。
+- 测试：`e2e-mobile.mjs` 「手动横竖屏」「工具栏收起」两节（191 项），冒烟 [7f]。
 
 ## 八、当前数据一览
 

@@ -894,3 +894,18 @@ aside .x{background:none;border:0;color:var(--sub);font-size:20px;cursor:pointer
 .tune-dev{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 /* 小手机顶上的「返回 / 收起」只在手机模式下出现（见 mobile.css） */
 .ph-m-btn{display:none}
+
+/* ===== 工具栏收起（v5.23）=====
+   整排按钮包在 .tb-items 里，最右边一个窄把手。收起 = 整排往右滑出屏幕、淡掉，只剩把手。
+   用 transform 不改布局，把手待在原地不跳。 */
+#toolbar{align-items:flex-start}
+#toolbar .tb-items{display:flex;gap:inherit;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .22s ease}
+#toolbar.collapsed .tb-items{transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none}
+#toolbar #btn-tbhide{position:relative;width:20px;padding:0;font-size:17px;line-height:1;color:#8fb3c7}
+#toolbar #btn-tbhide::before{content:'›'}
+#toolbar.collapsed #btn-tbhide::before{content:'‹'}
+#tb-dot{position:absolute;top:4px;right:3px;width:6px;height:6px;border-radius:50%;background:#ff6b8a;
+  box-shadow:0 0 6px rgba(255,107,138,.8)}
+/* 只在手机模式出现的东西（横竖屏按钮之类） */
+html:not(.m-mobile) .m-only{display:none}
+@media (prefers-reduced-motion:reduce){#toolbar .tb-items{transition:none}}
