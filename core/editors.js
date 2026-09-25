@@ -38,8 +38,8 @@
     if (!preset) return [];
     var byId = {};
     (preset.prompts || []).forEach(function (p) { byId[p.identifier] = p; });
-    var order = (preset.prompt_order && preset.prompt_order[0] &&
-                 preset.prompt_order[0].order) || [];
+    var og = global.PromptBuilder && global.PromptBuilder.orderOf(preset);
+    var order = (og && og.order) || [];
     if (!order.length) {
       order = (preset.prompts || []).map(function (p) {
         return { identifier: p.identifier, enabled: p.enabled !== false };
@@ -54,14 +54,14 @@
         marker: !!p.marker,
         enabled: !!o.enabled,
         role: p.role || 'system',
-        content: String(p.content || ''),
-        chars: String(p.content || '').length
+        content: global.PromptBuilder ? global.PromptBuilder.textOf(p) : String(p.content || ''),
+        chars: (global.PromptBuilder ? global.PromptBuilder.textOf(p) : String(p.content || '')).length
       };
     });
   }
   function setBlockEnabled(preset, identifier, on) {
-    var order = preset.prompt_order && preset.prompt_order[0] &&
-                preset.prompt_order[0].order;
+    var og = global.PromptBuilder && global.PromptBuilder.orderOf(preset);
+    var order = og && og.order;
     if (!order) return false;
     for (var i = 0; i < order.length; i++) {
       if (order[i].identifier === identifier) { order[i].enabled = !!on; return true; }
@@ -76,8 +76,8 @@
     return false;
   }
   function moveBlock(preset, identifier, delta) {
-    var order = preset.prompt_order && preset.prompt_order[0] &&
-                preset.prompt_order[0].order;
+    var og = global.PromptBuilder && global.PromptBuilder.orderOf(preset);
+    var order = og && og.order;
     if (!order) return false;
     var i = -1, k;
     for (k = 0; k < order.length; k++) if (order[k].identifier === identifier) i = k;

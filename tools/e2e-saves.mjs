@@ -122,10 +122,14 @@ await p.waitForTimeout(700);
 runs = await p.evaluate(() => [...document.querySelectorAll('#boot-runs-body .runrow')]
   .map(r => r.textContent.replace(/\s+/g, ' ').trim()));
 ok('现在有两个周目，A 局还在', runs.length === 2, JSON.stringify(runs));
-const slots = await p.evaluate(async () => (await window.GalStore.listSaves()).map(s => s.id));
+/* v5.21 起每个开局还多一个「开场」根节点（node:…），这里只看「最新进度」指针 */
+const slots = await p.evaluate(async () => (await window.GalStore.listSaves())
+  .map(s => s.id).filter(id => id.indexOf('node:') !== 0));
 ok('两份自动存档在不同的槽里', new Set(slots).size === 2, JSON.stringify(slots));
 ok('槽名带周目 id，不是共用的 auto',
    slots.every(s => s.indexOf('auto:') === 0), JSON.stringify(slots));
+const trees = await p.evaluate(async () => window.SaveTree.buildTrees(await window.GalStore.listSaves()).length);
+ok('两个开局是两棵存档树', trees === 2, trees);
 await p.screenshot({ path: OUT + '/sv-3-two-runs.png' });
 
 console.log('\n[5] 回到 A 局，进度要完整');

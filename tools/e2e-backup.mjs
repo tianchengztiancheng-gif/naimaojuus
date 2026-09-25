@@ -102,6 +102,9 @@ await p.evaluate(() => {
     .find(x => /存读档|save/i.test(x.textContent + x.dataset.sec));
   if (b2) b2.click();
 });
+await p.waitForTimeout(400);
+/* v5.21 起存档是一个独立界面，手机里这一栏只剩一个「打开存档」 */
+await p.evaluate(() => { const o = document.getElementById('open-saves'); if (o) o.click(); });
 await p.waitForTimeout(600);
 ok('面板上有「导出全部」按钮', await p.evaluate(() => !!document.getElementById('sv-exp')));
 ok('面板上有「导入备份」按钮', await p.evaluate(() => !!document.getElementById('sv-imp')));
@@ -147,6 +150,8 @@ await p.evaluate(() => {
     .find(x => /存读档|save/i.test(x.textContent + x.dataset.sec));
   if (b2) b2.click();
 });
+await p.waitForTimeout(400);
+await p.evaluate(() => { const o = document.getElementById('open-saves'); if (o) o.click(); });
 await p.waitForTimeout(500);
 await p.setInputFiles('#sv-file', packPath);
 await p.waitForTimeout(1200);

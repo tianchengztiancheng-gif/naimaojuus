@@ -45,7 +45,12 @@
     this.card = null;
     this.preset = null;
     this.pool = [];
-    this.regexScripts = [];
+    this.regexScripts = [];     // 卡自带的正则（显示用，沿用老行为）
+    this.cardRegex = [];        // 卡自带的正则（按酒馆语义，给提示词用）
+    this.presetRegex = [];      // 预设自带的正则
+    this.userRegex = [];        // 玩家单独导入的正则
+    this.regexOff = {};         // 玩家在界面上手动开关过的：{ 'preset:名字': true=关 / false=开 }
+    this.lastReasoning = null;  // 上一轮剥思维链的情况，界面据此提示「被截断在思维链里」
     this.history = [];
     this.log = [];              // 全部演过的句子，扁平存放，供回看与跳转
     this.phoneSent = [];        // 手机里产生的消息（玩家发的 + 独立生成的回复）
@@ -58,6 +63,7 @@
     this.card = card;
     this.pool = global.Worldbook.fromCard(card);
     this.regexScripts = collectRegex(card);
+    this.cardRegex = global.GalRegex ? global.GalRegex.fromCard(card) : [];
     if (global.Editors && global.Editors.ensurePhoneRule) {
       global.Editors.ensurePhoneRule(this.pool);
     }
@@ -107,7 +113,63 @@
 
   Engine.prototype.loadPreset = function (preset) {
     this.preset = preset;
+    /* 预设自带的正则 —— 以前完全没读，「隐藏思维链」那条因此失效 */
+    this.presetRegex = global.GalRegex ? global.GalRegex.fromPreset(preset) : [];
+    /* 有些预设附带世界书（world_info）。换预设时先把上一份预设带来的条目摘掉 */
+    this.pool = (this.pool || []).filter(function (e) { return String(e.uid).indexOf('preset:') !== 0; });
+    var wi = preset && preset.world_info;
+    var list = wi && (Array.isArray(wi) ? wi : (wi.entries || wi));
+    if (list && typeof list === 'object') {
+      this.presetWiCount = 0;
+      try {
+        var add = global.Worldbook.fromCard({ data: { character_book: { entries: list } } }, { uidPrefix: 'preset:' })
+          .filter(function (e) { return String(e.content || '').trim(); });
+        this.pool = this.pool.concat(add);
+        this.presetWiCount = add.length;
+      } catch (e) {}
+    } else this.presetWiCount = 0;
     return global.PromptBuilder.parsePreset(preset).order.length;
+  };
+
+  /** 玩家单独导入的正则（酒馆导出的 regex-*.json），传原始脚本数组 */
+  Engine.prototype.setUserRegex = function (list) {
+    this.userRegex = global.GalRegex ? global.GalRegex.collect(list || [], 'user') : [];
+    return this.userRegex.length;
+  };
+
+  /** 全部正则，已套上玩家的手动开关。which: 'display' 不含卡（卡走老路径） */
+  Engine.prototype.regexList = function (which) {
+    var off = this.regexOff || {};
+    var all = (which === 'display' ? [] : this.cardRegex || [])
+      .concat(this.presetRegex || [], this.userRegex || []);
+    return all.map(function (s) {
+      var k = s.source + ':' + s.name;
+      if (off[k] == null) return s;
+      return Object.assign({}, s, { disabled: !!off[k] });
+    });
+  };
+
+  /** 发给模型之前，按酒馆语义处理历史：
+      剥掉旧的思维链、跑 promptOnly / 普通正则（带深度筛选）。
+      存档里的原文不动。 */
+  Engine.prototype.promptHistory = function (hist, userText) {
+    var R = global.GalRegex;
+    if (!R) return { hist: hist, userText: userText };
+    var scripts = this.regexList('prompt');
+    var ctx = { charName: this.card && (this.card.data || this.card).name,
+                userName: this.cfg.userName || '指挥官' };
+    var total = hist.length + (userText ? 1 : 0);
+    var out = hist.map(function (m, i) {
+      var depth = total - 1 - i;
+      var c = m.content;
+      if (m.role === 'assistant') c = R.stripPlaceholders(R.stripReasoning(c).text || c, null, true);
+      c = R.run(c, scripts, { mode: 'prompt', depth: depth, ctx: ctx,
+        placement: m.role === 'user' ? R.PLACE.USER : R.PLACE.AI });
+      return c === m.content ? m : Object.assign({}, m, { content: c });
+    });
+    var u = userText ? R.run(userText, scripts,
+      { mode: 'prompt', depth: 0, ctx: ctx, placement: R.PLACE.USER }) : userText;
+    return { hist: out, userText: u };
   };
 
   /** 额外世界书（独立 .json 导出的 World Info） */
@@ -146,13 +208,18 @@
       rng: opt.rng
     });
 
+    /* 世界书扫描用原文；发给模型的历史要先过正则、剥思维链 */
+    var ph = this.promptHistory(hist, userText);
     var built = global.PromptBuilder.build({
-      preset: this.preset, card: this.card, history: hist, userText: userText,
+      preset: this.preset, card: this.card, history: ph.hist, userText: ph.userText,
       worldbook: wb,
       charName: opt.charName || (this.card && (this.card.data || this.card).name),
       userName: opt.userName || '指挥官',
       personaDescription: opt.persona || '',
-      extraSystem: [this.renderVars(), this.renderPhoneLog()].filter(Boolean).join('\n\n')
+      macroVars: this.macroVars || (this.macroVars = {}),
+      model: this.cfg.model || (global.GalAPI && global.GalAPI.loadConfig().model) || '',
+      /* opt.extraHint：只对这一次请求有效的附加要求（重roll 时的「换一种写法」） */
+      extraSystem: [this.renderVars(), this.renderPhoneLog(), opt.extraHint || ''].filter(Boolean).join('\n\n')
     });
 
     this.lastReport = { worldbook: wb, prompt: built };
@@ -353,10 +420,13 @@
     opt = opt || {};
     var send = opt.send || this.cfg.quietSend;
     if (!send) throw new Error('未配置独立生成通道');
-    return await send([{ role: 'user', content: prompt }], {
+    var out = await send([{ role: 'user', content: prompt }], {
       maxTokens: opt.maxTokens || 600,
       temperature: opt.temperature
     });
+    /* 推理模型在独立通道里也可能先吐 <think>，手机消息里不该出现 */
+    if (global.GalRegex && typeof out === 'string') out = global.GalRegex.stripReasoning(out).text || out;
+    return out;
   };
 
   /* ============================================================
@@ -507,6 +577,16 @@
     };
     var outfitAtTurnStart = JSON.parse(JSON.stringify(this.vars.人物 || {}));
 
+    /* 思维链先剥，而且要早于一切 —— 推理里常常照抄格式示例
+       （手机标签、变量更新），不先摘掉会被当成真的认领 */
+    this.lastReasoning = null;
+    if (global.GalRegex) {
+      var sr = global.GalRegex.stripReasoning(text);
+      this.lastReasoning = sr;
+      if (sr.stripped) { text = sr.text; applied.push(sr.unclosed ? '去思维链(未闭合)' : '去思维链'); }
+      text = global.GalRegex.stripPlaceholders(text, applied);
+    }
+
     CLEANERS.forEach(function (c) {
       var before = text;
       text = text.replace(c.re, c.to);
@@ -541,6 +621,15 @@
         if (before !== text) applied.push(r.name);
       } catch (e) {}
     });
+
+    /* 预设自带 + 单独导入的正则（只跑作用于 AI 输出、且影响显示的那些） */
+    if (global.GalRegex) {
+      text = global.GalRegex.run(text, this.regexList('display'), {
+        mode: 'display', placement: global.GalRegex.PLACE.AI, depth: 0, applied: applied,
+        ctx: { charName: this.card && (this.card.data || this.card).name,
+               userName: this.cfg.userName || '指挥官' }
+      });
+    }
 
     var parsed = global.ScriptParser.parse(text, { order: this.cfg.scriptOrder });
     var self = this;
@@ -619,6 +708,7 @@
     return {
       text: text, modules: modules, updates: updates,
       cleaners: applied, order: parsed.order, misses: uniq,
+      reasoning: this.lastReasoning,
       inlinePrompts: inlinePrompts,
       hasPhone: !!(global.Phone && global.Phone.has(phoneRaw))
     };
@@ -654,6 +744,16 @@
     var dry = this.dryRun(userText, opt);
     var send = opt.send || this.cfg.send || defaultSend;
     var raw = await send(dry.messages, dry.params);
+    /* 抗空回：一个字没有、或者剥掉思维链和占位块后什么都不剩，自动再要一次。
+       但如果是「写思维链写到上限被截断」，再要一次也一样，那种交给界面提示调大最大输出。
+       （KaiTuoYiShi 的主剧情也是空回自动重试一次） */
+    var tries = opt.emptyRetries == null ? 1 : opt.emptyRetries;
+    for (var k = 0; k < tries && this.isEmptyReply(raw); k++) {
+      var lf = global.GalAPI && global.GalAPI.lastFinish;
+      if (lf && lf.info && lf.info.kind === 'length') break;
+      if (opt.onEmptyRetry) { try { opt.onEmptyRetry(k + 1); } catch (e) {} }
+      raw = await send(dry.messages, dry.params);
+    }
     var res = this.processOutput(raw);
     /* 登记这一轮注入了哪些条目，供下一轮的时间衰减降权 */
     if (global.Vector && dry.worldbook) {
@@ -661,9 +761,32 @@
       global.Vector.noteActivated(dry.worldbook.active, t);
     }
     if (userText) this.history.push({ role: 'user', content: userText });
-    this.history.push({ role: 'assistant', content: raw });
+    this.history.push({ role: 'assistant', content: this.historyTextOf(raw) });
+    res.raw = raw;
     res.request = dry;
     return res;
+  };
+
+  /** 存进历史的版本：剥掉思维链和占位块。每轮都把上一轮的推理原样发回去，
+      token 越滚越大，模型还会照着旧推理写。原文在 res.raw 里，调试面板看得到。 */
+  Engine.prototype.historyTextOf = function (raw) {
+    var keep = String(raw == null ? '' : raw);
+    if (global.GalRegex) {
+      keep = global.GalRegex.stripReasoning(keep).text || keep;
+      keep = global.GalRegex.stripPlaceholders(keep, null, true) || keep;
+    }
+    return keep;
+  };
+
+  /** 这条回复有没有能演的正文 */
+  Engine.prototype.isEmptyReply = function (raw) {
+    var t = String(raw == null ? '' : raw);
+    if (!t.trim()) return true;
+    var R = global.GalRegex;
+    if (!R) return false;
+    t = R.stripPlaceholders(R.stripReasoning(t).text);
+    /* 只剥「空壳标签」<content></content> 这种；<背景|港区> 这类剧本行里有内容，不能算空 */
+    return !t.replace(/<\/?[A-Za-z_][\w-]*\s*>/g, '').trim();
   };
 
   function defaultSend(messages, params) {

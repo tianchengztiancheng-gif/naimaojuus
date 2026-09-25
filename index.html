@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Gal 引擎</title>
-<link rel="stylesheet" href="app/style.css">
+<!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
+<link rel="stylesheet" href="app/style.css?v=5.21">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.21">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css">
-<link rel="stylesheet" href="app/editor-theme.css">
+<link rel="stylesheet" href="app/phone.css?v=5.21">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.21">
 </head>
 <body>
 
@@ -54,6 +55,14 @@
 
   <div id="inputbar" hidden>
     <textarea id="usertext" rows="1" placeholder="你的行动或台词…（Enter 发送，Shift+Enter 换行）"></textarea>
+    <!-- 对回复不满意：重roll（同一句话重新生成）/ 撤回（改了再发）/ 在几版之间切换 -->
+    <div class="turn-tools">
+      <span id="turn-ver" hidden title="这一轮重roll 过的几个版本，来回切不花钱">
+        <button type="button" id="ver-prev" aria-label="上一版">‹</button><b id="ver-n">1/1</b><button type="button" id="ver-next" aria-label="下一版">›</button>
+      </span>
+      <button type="button" id="btn-undo" disabled title="撤回最后一轮：那句话放回输入框，改完再发">↶<span>撤回</span></button>
+      <button type="button" id="btn-reroll" disabled title="对这一轮回复不满意？用同一句话重新生成">⟳<span>重roll</span></button>
+    </div>
     <button id="send">发送</button>
   </div>
 
@@ -62,6 +71,7 @@
     <button id="btn-cgmode" title="CG 常驻：让 CG 盖住立绘，一直铺着推剧情">▣</button>
     <button id="btn-cg" title="CG / 相册">✿<i id="cg-dot" hidden></i></button>
     <button id="btn-skin" title="换装（在场舰娘的皮肤）">◈</button>
+    <button id="btn-saves" title="存档 / 读档（每轮自动存，读旧的接着玩会长出分支）">▤</button>
     <button id="btn-phone" title="打开手机（剧情、状态、存档、外观、调试都在里面）">▢<i id="phone-dot" hidden></i></button>
   </div>
 
@@ -109,6 +119,45 @@
     <label>热点保留条数 <span class="v" id="v-lt">20</span>
       <input type="range" id="t-lt" min="5" max="80" step="5" value="20"></label>
     <button id="t-reset">恢复默认</button>
+  </div>
+
+  <!-- 存读档（存档树）。版式参考 KaiTuoYiShi 的存档树控制台 -->
+  <div id="save-modal" hidden>
+    <div class="sv-shell" role="dialog" aria-label="存档">
+      <header class="sv-hd">
+        <div><div class="sv-kicker">SAVE TREE</div><h2>存 档</h2></div>
+        <span class="sv-cur" id="sv-cur"></span>
+        <button type="button" class="x" id="sv-close" aria-label="关闭">×</button>
+      </header>
+      <div class="sv-body">
+        <!-- 不能用 <aside>：style.css 里有条裸选择器 aside{position:absolute;…}，见交接文档「踩过的坑」 -->
+        <div class="sv-side">
+          <div class="sv-newsave">
+            <input type="text" id="save-name" placeholder="存档名（留空用地点 + 时间）">
+            <button type="button" class="sv-btn primary" id="do-save">保存当前进度</button>
+          </div>
+          <div class="sv-io">
+            <button type="button" class="sv-btn" id="sv-imp">导入存档</button>
+            <button type="button" class="sv-btn" id="sv-exp">导出全部</button>
+          </div>
+          <label class="sv-chk"><input type="checkbox" id="sv-img"> 导出时连 CG 图一起（文件会很大）</label>
+          <input type="file" id="sv-file" accept=".json,application/json" hidden>
+          <div class="sv-metrics" id="sv-metrics"></div>
+          <div class="sv-rules">
+            <b>怎么用</b>
+            <p>每一轮结束自动存一个节点，每个开局保留最近 8 个；手动存的不限、不会被清掉。</p>
+            <p>读一个旧节点接着玩，会从那里长出新分支，原来那条线还在。</p>
+            <p>只是不满意这一轮？不用读档，输入框旁边的 <b>⟳ 重roll</b> 就行。</p>
+          </div>
+        </div>
+        <main class="sv-main">
+          <div class="sv-note" id="sv-note">存档只在这个浏览器里。清缓存、换设备都会没，本地打开的文件和网址也各存各的 —— 玩得久了记得导一份出来。</div>
+          <div class="sv-tabs" id="sv-tabs"></div>
+          <div class="sv-trees" id="sv-trees"></div>
+          <div id="slotlist"></div>
+        </main>
+      </div>
+    </div>
   </div>
 
   <div id="spinner" hidden>
@@ -201,7 +250,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.20</span>
+        <span>gal 引擎 · v5.21</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -221,6 +270,7 @@
             <label class="file">角色卡 JSON<input type="file" id="f-card" accept=".json" hidden></label>
             <label class="file">预设 JSON<input type="file" id="f-preset" accept=".json" hidden></label>
             <label class="file">附加世界书<input type="file" id="f-wi" accept=".json" hidden></label>
+            <label class="file" title="酒馆「扩展 · 正则」里导出的 json，可多选。预设里自带的正则会自动读取，不用再导">正则（可选）<input type="file" id="f-regex" accept=".json" multiple hidden></label>
           </div>
           <div class="note" id="assets-note">尚未载入。文件只存在你本机的浏览器里。</div>
           <p class="boot-tip">角色卡是内容来源（立绘表、场景表、世界书、开场白都从里面读）。
@@ -243,6 +293,7 @@
                 <button type="button" id="btn-models" style="white-space:nowrap;padding:8px 12px">拉取</button>
               </span>
               <datalist id="model-list"></datalist>
+              <select id="cfg-model-sel" hidden></select>
             </label>
           </div>
           <label>API 地址 <input type="text" id="cfg-base" placeholder="https://api.anthropic.com"></label>
@@ -253,9 +304,30 @@
               >最大输出(上限) <input type="number" id="cfg-max" step="256" min="256"></label>
             <label class="chk"><input type="checkbox" id="cfg-stream" checked> 流式</label>
           </div>
+          <div class="grid2">
+            <label title="酒馆的「提示词后处理」。中转报消息格式错、或者一到多轮就乱，试试「全部合成一条」"
+              >消息后处理
+              <select id="cfg-post">
+                <option value="auto" title="对话中途的 system 改成 user，位置不动">自动（推荐）</option>
+                <option value="keep" title="OpenAI 官方等支持中途 system 的接口">保留 system</option>
+                <option value="single" title="中转一见多轮就乱时用">合成一条消息</option>
+              </select>
+            </label>
+            <label title="预设里的「助手预填」assistant_prefill。新一代 Claude 不收会自动去掉"
+              >助手预填
+              <select id="cfg-prefill">
+                <option value="auto" title="Anthropic 协议与 DeepSeek 官方发，其余不发">自动（推荐）</option>
+                <option value="all">所有接口都发</option>
+                <option value="off">不发</option>
+              </select>
+            </label>
+          </div>
           <div class="row">
             <button id="btn-test">测试连接</button>
             <span class="note" id="test-note"></span>
+          </div>
+          <div class="row">
+            <span class="dim" style="font-size:12px">不知道模型名就先空着，点「测试连接」会列出这个接口能用的全部模型，挑一个再测一次。</span>
           </div>
           <p class="boot-tip">地址填根地址就行，<code>/v1</code> 这些会自动补。
             401/403 是密钥问题，404 多半是地址少了或多了 <code>/v1</code>，
@@ -308,23 +380,25 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js"></script>
-<script src="core/cardres.js"></script>
-<script src="core/tokens.js"></script>
-<script src="core/vector.js"></script>
-<script src="core/imagegen.js"></script>
-<script src="core/snapshot.js"></script>
-<script src="core/gallery.js"></script>
-<script src="core/cg.js"></script>
-<script src="core/resolver.js"></script>
-<script src="core/worldbook.js"></script>
-<script src="core/prompt.js"></script>
-<script src="core/script.js"></script>
-<script src="core/phone.js"></script>
-<script src="core/engine.js"></script>
-<script src="core/api.js"></script>
-<script src="core/storage.js"></script>
-<script src="core/editors.js"></script>
-<script src="app/app.js"></script>
+<script src="core/crash.js?v=5.21"></script>
+<script src="core/cardres.js?v=5.21"></script>
+<script src="core/tokens.js?v=5.21"></script>
+<script src="core/vector.js?v=5.21"></script>
+<script src="core/imagegen.js?v=5.21"></script>
+<script src="core/snapshot.js?v=5.21"></script>
+<script src="core/gallery.js?v=5.21"></script>
+<script src="core/cg.js?v=5.21"></script>
+<script src="core/resolver.js?v=5.21"></script>
+<script src="core/worldbook.js?v=5.21"></script>
+<script src="core/regex.js?v=5.21"></script>
+<script src="core/prompt.js?v=5.21"></script>
+<script src="core/script.js?v=5.21"></script>
+<script src="core/phone.js?v=5.21"></script>
+<script src="core/engine.js?v=5.21"></script>
+<script src="core/api.js?v=5.21"></script>
+<script src="core/savetree.js?v=5.21"></script>
+<script src="core/storage.js?v=5.21"></script>
+<script src="core/editors.js?v=5.21"></script>
+<script src="app/app.js?v=5.21"></script>
 </body>
 </html>

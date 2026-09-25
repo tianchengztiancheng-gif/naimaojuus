@@ -1114,22 +1114,67 @@
     return !!(e && (e.isComposing || e.keyCode === 229));
   }
 
-  async function submit(userText) {
+  /* 轻提示：不挡操作，几秒后自己消失 */
+  function toast(msg, kind, ms) {
+    var box = $('gal-toast');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'gal-toast';
+      document.body.appendChild(box);
+    }
+    var it = document.createElement('div');
+    it.className = 'gal-toast-item ' + (kind || '');
+    it.textContent = msg;
+    it.onclick = function () { it.remove(); };
+    box.appendChild(it);
+    setTimeout(function () { it.classList.add('out'); }, (ms || 9000) - 400);
+    setTimeout(function () { it.remove(); }, ms || 9000);
+  }
+
+  /** 这一轮是怎么结束的：被截断 / 被过滤 / 只写了思维链，都要让玩家知道，
+      而不是只看到一段戛然而止的台词、不知道是哪一环的问题 */
+  function warnAfterTurn(res) {
+    var f = GalAPI.lastFinish;
+    var rs = res && res.reasoning;
+    if (rs && rs.onlyReasoning) {
+      toast('这一轮模型只写了思维链、正文还没开始就停了。多半是「最大输出」太小，到 设置 · 接口 调大。', 'bad', 14000);
+      return;
+    }
+    if (f && f.info) {
+      toast(f.info.text, f.info.kind === 'filter' ? 'bad' : 'warn', 14000);
+    } else if (rs && rs.unclosed) {
+      toast('思维链没写闭合标签，已按正文起点切开。如果台词缺了一截，调大「最大输出」。', 'warn', 9000);
+    }
+  }
+
+  /**
+   * 发一轮。
+   * @param {string} [userText] 不传就读输入框
+   * @param {object} [opt] { reroll: 回合快照 } —— 重roll 时传，沿用那一轮的快照，
+   *        并附一句「换一种写法」的要求；失败时退回原来那一版，不会什么都没了
+   */
+  async function submit(userText, opt) {
+    opt = opt || {};
     if (busy) return;
     var input = $('usertext');
+    var fromInput = userText == null;
     userText = userText != null ? userText : input.value.trim();
     if (!userText) return;
     busy = true;
-    input.value = ''; input.style.height = 'auto';
+    if (fromInput) { input.value = ''; input.style.height = 'auto'; }
     $('send').disabled = true;
+    updateTurnUI();
     abortCtl = new AbortController();
     startSpinner();
+    if (opt.reroll) $('elapsed').textContent = ' 重roll 中…';
 
+    var snap = opt.reroll || beginTurn(userText);
     try {
       var persona = Editors.loadPersona();
       var res = await eng.turn(userText, {
         userName: persona.name,
         persona: persona.description,
+        extraHint: opt.reroll ? rerollHint(snap) : '',
         send: function (messages, params) {
           return GalAPI.chatWithRetry(messages, {
             params: params,
@@ -1137,32 +1182,45 @@
             onDelta: function (d, full) { lastRaw = full; },
             onRetry: function (n, total) {
               $('elapsed').textContent = ' 断线重连 ' + n + '/' + total + '…';
-            }
+            },
+            onCompat: function (why) { toast('参数自动调整：' + why + '（已记住，之后不再报错）', 'warn', 8000); }
           });
-        }
+        },
+        onEmptyRetry: function () { $('elapsed').textContent = ' 空回复，自动重试…'; }
       });
       lastResult = res;
-      lastRaw = res.text;
+      lastRaw = res.raw || res.text;
+      warnAfterTurn(res);
       var startIdx = play(res.modules);
-      autosave();
+      recordVariant(snap, res);
+      await checkpoint(snap);
+      autosave({ skipNode: true });
+      if (opt.reroll) toast('已重roll：这是第 ' + snap.variants.length + ' 版。不满意可以再点一次，' +
+        '或者用 ‹ › 翻回之前的版本。', 'ok', 6000);
       /* 出图另起一条线，不 await —— 剧情已经能推了，图慢慢来 */
       if (startIdx != null) kickCG(res, startIdx);
       autoRegisterScenes(res.misses);
     } catch (e) {
-      speakerEl.className = 'narrator';
-      speakerEl.textContent = '错误';
-      var rp = eng.lastReport && eng.lastReport.prompt;
-      var size = rp ? '\n\n本次请求约 ' + rp.report.estTokens.toLocaleString() +
-                      ' token（' + rp.report.messageCount + ' 条消息）' : '';
-      textEl.textContent = String(e.message || e) + size +
-        (GalAPI.isTransient(e) ? '\n重试 2 次仍然失败。这类错误多半是中转到上游的连接不稳，' +
-                                  '可以直接再发一次试试。' : '');
-      $('dialogue').hidden = false;
-      hintEl.classList.remove('on');
+      /* 重roll 失败：已经撤掉的那一版原样放回去，别让玩家两头落空 */
+      if (opt.reroll && snap.variants.length) {
+        applyVariant(snap, snap.vi, { silent: true });
+        toast('重roll 没成功，已经放回原来那一版：' + String(e.message || e).split('\n')[0], 'bad', 12000);
+      } else {
+        speakerEl.className = 'narrator';
+        speakerEl.textContent = '错误';
+        var rp = eng.lastReport && eng.lastReport.prompt;
+        var size = rp ? '\n\n本次请求约 ' + rp.report.estTokens.toLocaleString() +
+                        ' token（' + rp.report.messageCount + ' 条消息）' : '';
+        textEl.textContent = String(e.message || e) + size +
+          (GalAPI.isTransient(e) ? '\n重试 2 次仍然失败。这类错误多半是中转到上游的连接不稳，' +
+                                    '可以直接再发一次试试。' : '');
+        $('dialogue').hidden = false;
+        hintEl.classList.remove('on');
+      }
       /* 把刚才那句还回输入框 —— 输入框是在发请求**之前**清空的，
          网络一抖或者点了中断，玩家写的两百字就没了。
          只在输入框还空着时还原，免得盖掉他这段时间里新写的东西。 */
-      if (!input.value) {
+      if (fromInput && !input.value) {
         input.value = userText;
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 110) + 'px';
@@ -1172,6 +1230,7 @@
       abortCtl = null;
       $('send').disabled = false;
       stopSpinner();
+      updateTurnUI();
       renderDebug();
       renderVars();
       renderHistory();
@@ -1179,6 +1238,201 @@
       refreshPhoneBadge();
     }
   }
+
+  /* ============================================================
+     回合快照：重roll / 撤回 / 版本切换
+     ============================================================
+     有人反馈「对回复不满意，不知道怎么重来」。以前确实没有入口 ——
+     只能读档。现在输入框旁边有三样：
+       ⟳ 重roll   撤掉最后一轮，用同一句话重新生成（附一句「换一种写法」）
+       ↶ 撤回     撤掉最后一轮，把那句话还回输入框，改了再发
+       ‹ 2/3 ›    同一轮重roll 过的几版之间来回切，不花钱
+     每一轮开始前记一份「回合前快照」：变量、宏变量、这轮之前的历史长度和轮次号。
+     撤掉一轮 = 把这些恢复回去，再把这一轮的历史和剧情记录摘掉。
+     （KaiTuoYiShi 的重roll 也是这个思路：preTurnSnapshot + 回滚；
+       多版本切换是酒馆 swipe 的做法，KT 没有） */
+  var turnStack = [];          // 最近几轮的回合前快照，栈顶是最后一轮
+  var TURN_KEEP = 8;           // 内存里留几层（能连续撤回几轮）
+  var TURN_SAVE = 3;           // 存档里带几层（读档后还能重roll）
+
+  function deepCopy(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+
+  function beginTurn(userText) {
+    var last = eng.log[eng.log.length - 1];
+    return {
+      userText: userText,
+      histLen: eng.history.length,
+      turnNo: last ? last.turn + 1 : 0,
+      vars: deepCopy(eng.vars),
+      macroVars: deepCopy(eng.macroVars || {}),
+      cursor: qi,
+      node: activeNode,          // 这一轮从哪个存档节点出发
+      turnNode: null,            // 这一轮自己的节点（checkpoint 时定）
+      variants: [],              // 每一版：{ raw, mods, varsAfter, at }
+      vi: 0
+    };
+  }
+
+  /** 这一轮生成完，把结果记成一个「版本」 */
+  function recordVariant(snap, res) {
+    var mods = eng.log.filter(function (m) { return m.turn === snap.turnNo; });
+    snap.variants.push({
+      raw: res.raw || res.text || '',
+      mods: mods,
+      varsAfter: deepCopy(eng.vars),
+      macroAfter: deepCopy(eng.macroVars || {}),
+      at: Date.now()
+    });
+    snap.vi = snap.variants.length - 1;
+    if (turnStack[turnStack.length - 1] !== snap) {
+      turnStack.push(snap);
+      if (turnStack.length > TURN_KEEP) turnStack.splice(0, turnStack.length - TURN_KEEP);
+    }
+  }
+
+  /** 撤掉这一轮：恢复变量，摘掉这一轮的历史和剧情记录 */
+  function revertTurn(snap) {
+    if (window.CG && CG.cancel) CG.cancel();       // 这一轮还在出的图别挂到下一版上
+    /* 历史：摘掉这一轮那一对 user/assistant。按内容找而不是直接截断 ——
+       这一轮之后手机群聊可能又往历史里加了几条（phoneOnly），那些要留着 */
+    for (var i = Math.max(0, snap.histLen - 2); i < eng.history.length; i++) {
+      var m = eng.history[i];
+      if (m && m.role === 'user' && !m.phoneOnly && m.content === snap.userText) {
+        var nx = eng.history[i + 1];
+        eng.history.splice(i, nx && nx.role === 'assistant' && !nx.phoneOnly ? 2 : 1);
+        break;
+      }
+    }
+    eng.log = eng.log.filter(function (m) { return m.turn < snap.turnNo; });
+    eng.vars = deepCopy(snap.vars) || {};
+    eng.macroVars = deepCopy(snap.macroVars) || {};
+    activeNode = snap.node;
+  }
+
+  /** 撤完之后把舞台停到上一轮的最后 */
+  function showAfterRevert(snap) {
+    if (eng.log.length) {
+      goTo(Math.min(snap.cursor != null ? snap.cursor : eng.log.length - 1, eng.log.length - 1), { instant: true });
+    } else {
+      speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
+      textEl.textContent = '已撤回到开头。';
+      qi = 0; updateNav();
+    }
+    renderHistory();
+  }
+
+  /** 切到第 i 版：不发请求，直接把那一版的剧情记录和变量放回去 */
+  function applyVariant(snap, i, o) {
+    o = o || {};
+    var v = snap.variants[i];
+    if (!v) return;
+    revertTurn(snap);
+    eng.history.push({ role: 'user', content: snap.userText });
+    eng.history.push({ role: 'assistant', content: eng.historyTextOf(v.raw) });
+    eng.vars = deepCopy(v.varsAfter) || eng.vars;
+    eng.macroVars = deepCopy(v.macroAfter) || eng.macroVars;
+    snap.vi = i;
+    lastRaw = v.raw;
+    if (v.mods && v.mods.length) {
+      var start = eng.appendLog(v.mods, { turn: snap.turnNo });
+      $('dialogue').hidden = false;
+      goTo(start, { instant: !!o.silent });
+      renderHistory();
+    } else {
+      var r = eng.processOutput(v.raw);
+      v.mods = r.modules; v.varsAfter = deepCopy(eng.vars);
+      play(r.modules);
+    }
+    if (!o.silent) {
+      var done = function () { autosave({ skipNode: true }); };
+      checkpoint(snap).then(done, done);
+    }
+    updateTurnUI();
+    renderVars();
+  }
+
+  /** 重roll 时附给模型的要求（只对这一次请求生效）。思路同 KaiTuoYiShi 的 buildRerollGenerationGuard */
+  function rerollHint(snap) {
+    var prev = snap.variants[snap.vi];
+    var ex = prev ? eng.historyTextOf(prev.raw).replace(/\s+/g, ' ').slice(0, 160) : '';
+    return '<重写要求>\n玩家对上一版回复不满意，要求重写这一轮。玩家的输入和剧情事实起点保持不变，' +
+      '但换一种写法：换开场镜头、推进顺序、对白切入和结尾，不要复用上一版的句子。\n' +
+      (ex ? '上一版开头（只用于避免重复，不是已经发生的事）：' + ex + '\n' : '') + '</重写要求>';
+  }
+
+  async function rerollLast() {
+    if (busy) return;
+    var snap = turnStack[turnStack.length - 1];
+    if (!snap) {
+      toast('还没有能重roll的回合。开场白不能重roll —— 想换开场可以点右上角 ⏻ 退出，换一个开局。', 'warn', 8000);
+      return;
+    }
+    revertTurn(snap);
+    showAfterRevert(snap);
+    await submit(snap.userText, { reroll: snap });
+  }
+
+  async function undoLast() {
+    if (busy) return;
+    var snap = turnStack.pop();
+    if (!snap) { toast('没有能撤回的回合了。', 'warn'); return; }
+    revertTurn(snap);
+    showAfterRevert(snap);
+    /* 这一轮自己的自动节点也撤掉（它就是被撤掉的那一版）；手动存过的不动 */
+    if (snap.turnNode) {
+      try {
+        var d = await GalStore.loadSlot('node:' + snap.turnNode);
+        if (d && d.type === 'auto') await GalStore.deleteSlot('node:' + snap.turnNode);
+      } catch (e) {}
+    }
+    autosave();
+    var input = $('usertext');
+    if (!input.value.trim()) {
+      input.value = snap.userText;
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+    }
+    input.focus();
+    updateTurnUI();
+    renderVars();
+    toast('已撤回最后一轮，那句话放回输入框了，改完再发。', 'ok', 5000);
+  }
+
+  function switchVariant(delta) {
+    var snap = turnStack[turnStack.length - 1];
+    if (busy || !snap || snap.variants.length < 2) return;
+    var i = snap.vi + delta;
+    if (i < 0 || i >= snap.variants.length) return;
+    applyVariant(snap, i);
+  }
+
+  /** 输入栏上三个按钮的状态 */
+  function updateTurnUI() {
+    var snap = turnStack[turnStack.length - 1];
+    var rr = $('btn-reroll'), ud = $('btn-undo'), vs = $('turn-ver');
+    if (rr) rr.disabled = busy || !snap;
+    if (ud) ud.disabled = busy || !snap;
+    if (vs) {
+      var n = snap ? snap.variants.length : 0;
+      vs.hidden = n < 2;
+      if (n >= 2) {
+        $('ver-n').textContent = (snap.vi + 1) + '/' + n;
+        $('ver-prev').disabled = busy || snap.vi <= 0;
+        $('ver-next').disabled = busy || snap.vi >= n - 1;
+      }
+    }
+  }
+
+  /** 存档里带上的快照（剧情记录 mods 很占地方，只带最近几层） */
+  function stackForSave() {
+    return turnStack.slice(-TURN_SAVE).map(function (s) {
+      return Object.assign({}, s, { variants: s.variants.map(function (v) {
+        return { raw: v.raw, mods: v.mods, varsAfter: v.varsAfter, macroAfter: v.macroAfter, at: v.at };
+      }) });
+    });
+  }
+
+
 
   /* ============================================================
      小手机 —— 骨架与样式原样取自 juus 卡，这里只负责填内容
@@ -1450,12 +1704,10 @@
 
     vars:  '<div class="kt-pane-bd pad" id="varsbody"></div>',
     save:  '<div class="kt-pane-bd pad">' +
-      '<div class="kt-sec"><h4>新 建 存 档</h4>' +
-      '<div class="kt-field"><label>存档名</label>' +
-      '<input type="text" id="save-name" placeholder="留空则自动用地点+时间">' +
-      '<div class="kt-hint">每轮会自动存一份到 auto 槽，这里是手动多存几个。</div></div>' +
-      '<button class="kt-btn kt-btn-primary kt-btn-wide" id="do-save">保 存</button></div>' +
-      '<div class="kt-sec"><h4>已 有 存 档</h4><div id="slotlist"></div></div></div>',
+      '<div class="kt-sec"><h4>存 读 档</h4>' +
+      '<p class="kt-hint">存档现在是一棵树：每一轮自动存一个节点，读旧节点接着玩会长出分支。' +
+      '游戏里右上角的 ▤ 也能直接打开。</p>' +
+      '<button class="kt-btn kt-btn-primary kt-btn-wide" id="open-saves">打开存档</button></div></div>',
     tune:  '<div class="kt-pane-bd pad" id="tune-host"></div>',
     img:
       '<div class="kt-pane-bd pad">' +
@@ -1635,11 +1887,22 @@
       if (!e.target.closest) return;
       var gh = e.target.closest('.kt-ghead');
       if (gh) { gh.parentNode.classList.toggle('open'); preOpen = true; return; }
+      var rt = e.target.getAttribute && e.target.getAttribute('data-rtog');
+      if (rt) {
+        var offMap = GalStore.local('gal_regex_off') || {};
+        offMap[rt] = !e.target.checked;
+        GalStore.local('gal_regex_off', offMap);
+        eng.regexOff = offMap;
+        renderPreset(); noteAssets();
+        return;
+      }
+      var rxRow = e.target.closest('[data-rx]');
+      if (rxRow) { openRegex(rxRow.getAttribute('data-rx')); return; }
       var t = e.target.getAttribute && e.target.getAttribute('data-ptog');
-      if (t) { Editors.setBlockEnabled(eng.preset, t, e.target.checked); renderPreset(); return; }
+      if (t) { Editors.setBlockEnabled(eng.preset, t, e.target.checked); persistPreset(); renderPreset(); return; }
       var up = e.target.getAttribute && e.target.getAttribute('data-pup');
       var dn = e.target.getAttribute && e.target.getAttribute('data-pdn');
-      if (up || dn) { Editors.moveBlock(eng.preset, up || dn, up ? -1 : 1); renderPreset(); return; }
+      if (up || dn) { Editors.moveBlock(eng.preset, up || dn, up ? -1 : 1); persistPreset(); renderPreset(); return; }
       var row = e.target.closest('[data-pid]');
       if (row) openBlock(row.dataset.pid);
     };
@@ -1648,6 +1911,7 @@
       var ta = $('pre-content');
       if (!preSel || !ta) return;
       Editors.setBlockContent(eng.preset, preSel, ta.value);
+      persistPreset();
       renderPreset();
       $('pre-title').textContent = '已保存';
       setTimeout(function () { $('pre-title').textContent = '块内容'; }, 1200);
@@ -1661,8 +1925,7 @@
       };
     });
 
-    $('do-save').onclick = doSave;
-    $('slotlist').addEventListener('click', slotClick);
+    $('open-saves').onclick = openSaves;
   }
 
   function buildSections(root) {
@@ -1727,7 +1990,7 @@
     }
     else if (k === 'me') renderPersona();
     else if (k === 'vars') renderVars();
-    else if (k === 'save') renderSlots();
+    else if (k === 'save') { /* 入口按钮在面板里，见 open-saves */ }
     else if (k === 'debug') renderDebug();
     else if (k === 'api') renderApiInfo();
   }
@@ -2047,10 +2310,45 @@
   }
 
   var preSel = null;
+  /* 预设面板里的改动（开关、排序、改正文）以前只改内存，刷新就没了 */
+  var presetName = '';
+  function persistPreset() {
+    if (eng.preset) GalStore.putPreset(eng.preset, presetName).catch(function () {});
+  }
+
+  /** 正则列表：预设自带 / 卡自带 / 单独导入，逐条可开关 */
+  function regexSection() {
+    var list = eng.regexList('prompt');
+    if (!list.length) return '';
+    var SRC = { preset: '预设', card: '卡', user: '导入' };
+    function where(r) {
+      var w = [];
+      if (r.placement.indexOf(1) !== -1) w.push('输入');
+      if (r.placement.indexOf(2) !== -1 || !r.placement.length) w.push('输出');
+      var scope = r.markdownOnly && r.promptOnly ? '显示+提示词'
+        : r.markdownOnly ? '仅显示' : r.promptOnly ? '仅提示词' : '直接改写';
+      return w.join('/') + ' · ' + scope;
+    }
+    return '<section class="kt-group' + (preOpen ? ' open' : '') + '" data-g="rx">' +
+      '<div class="kt-ghead"><span class="arw">▶</span>正 则<span class="cnt">' + list.length + '</span></div>' +
+      '<div class="kt-gbody">' + list.map(function (r) {
+        var key = r.source + ':' + r.name;
+        var note = r.skip ? '已跳过：' + r.skip
+          : r.htmlOnly ? '替换成 HTML 美化，舞台不渲染 HTML，只在提示词里生效'
+          : r.hideHtml ? '折叠块 → 这里直接隐藏' : where(r);
+        if (r.source === 'card') note += ' · 卡的显示正则仍走老路径';
+        return '<div class="kt-item' + (r.disabled || r.skip ? ' off' : '') + '" data-rx="' + esc(key) + '">' +
+          '<label class="kt-sw"><input type="checkbox" data-rtog="' + esc(key) + '"' +
+          (r.disabled ? '' : ' checked') + (r.skip ? ' disabled' : '') + '></label>' +
+          '<div class="kt-i-main"><div class="kt-i-t"><em class="tag role">' + (SRC[r.source] || r.source) +
+          '</em>' + esc(r.name) + '</div><div class="kt-i-s">' + esc(note) + '</div></div></div>';
+      }).join('') + '</div></section>';
+  }
+
   function renderPreset() {
     if (!eng.preset) {
       $('pre-stat').innerHTML = '<span class="warn">还没载入预设。</span>';
-      $('pre-list').innerHTML = '';
+      $('pre-list').innerHTML = regexSection();
       return;
     }
     var blocks = Editors.presetBlocks(eng.preset);
@@ -2081,7 +2379,7 @@
         '<span class="kt-move"><button data-pup="' + esc(b.identifier) + '">▲</button>' +
         '<button data-pdn="' + esc(b.identifier) + '">▼</button></span></div>';
         }).join('') + '</div></section>';
-    }).join('');
+    }).join('') + regexSection();
   }
   var preOpen = false;
   function openBlock(id) {
@@ -2106,6 +2404,38 @@
     PA('#pre-list .kt-item').forEach(function (el) {
       el.classList.toggle('on', el.dataset.pid === id);
     });
+  }
+
+  /** 正则详情 + 试跑：贴一段模型原文，看这条正则会把它改成什么样 */
+  function openRegex(key) {
+    var r = eng.regexList('prompt').filter(function (x) { return x.source + ':' + x.name === key; })[0];
+    if (!r) return;
+    preSel = null;
+    $('pre-title').textContent = '正则';
+    var scope = r.markdownOnly && r.promptOnly ? '显示 + 提示词' : r.markdownOnly ? '仅显示'
+      : r.promptOnly ? '仅提示词' : '直接改写（显示和提示词都生效）';
+    var dep = (r.minDepth != null || r.maxDepth != null)
+      ? '　·　深度 ' + (r.minDepth == null ? '0' : r.minDepth) + ' ~ ' + (r.maxDepth == null || r.maxDepth < 0 ? '∞' : r.maxDepth) : '';
+    $('pre-body').innerHTML = '<div class="kt-sec"><h4>' + esc(r.name) + '</h4>' +
+      '<div class="kt-hint">' + esc(scope) + dep + (r.skip ? '<br><span class="warn">已跳过：' + esc(r.skip) + '</span>' : '') +
+      (r.htmlOnly ? '<br>替换成 HTML，舞台不渲染 HTML，所以只在提示词里生效。' : '') +
+      (r.hideHtml ? '<br>替换成折叠块，这里当作隐藏处理。' : '') + '</div>' +
+      '<div class="kt-field"><label>查找</label><textarea rows="3" readonly id="rx-find"></textarea></div>' +
+      '<div class="kt-field"><label>替换为</label><textarea rows="3" readonly id="rx-rep"></textarea></div>' +
+      '<div class="kt-field"><label>试跑：贴一段模型原文（调试面板「模型原文」里复制）</label>' +
+      '<textarea rows="6" id="rx-sample"></textarea></div>' +
+      '<div class="kt-field"><label id="rx-stat">结果</label><textarea rows="6" readonly id="rx-out"></textarea></div></div>';
+    $('rx-find').value = r.find; $('rx-rep').value = r.rep;
+    $('rx-sample').value = lastRaw || '';
+    function go() {
+      var res = GalRegex.dryRun(r, $('rx-sample').value, { charName: eng.card && (eng.card.data || eng.card).name,
+        userName: Editors.loadPersona().name });
+      $('rx-stat').textContent = res.ok ? '结果（命中 ' + res.matches + ' 处）' : '出错：' + res.error;
+      $('rx-out').value = res.after;
+    }
+    $('rx-sample').addEventListener('input', go);
+    go();
+    $('pre-split').classList.add('show-edit');
   }
 
   function openApp(k) {
@@ -2825,19 +3155,87 @@
      这种情况继续写 'auto'，不给老存档搬家。 */
   function autoSlotId() { return runId ? 'auto:' + runId : 'auto'; }
 
-  function snapshot() {
+  /* ---------- 存档树 ----------
+     思路来自 KaiTuoYiShi：一个开局是一棵树，每一轮结束自动存一个节点，
+     手动存档也是节点。读一个旧节点接着玩，新节点挂在它下面 —— 自然长出分支，
+     原来那条线不会被覆盖。自动节点每棵树保留最近 SaveTree.AUTO_KEEP 个。
+     auto:<runId> 仍然是「最新进度」指针，「继续上次」和开场的周目列表用它。 */
+  var activeNode = null;       // 现在所在的节点（下一个节点的父节点）
+
+  /**
+   * @param {object} [o] { type:'auto'|'manual', nodeId, parent, name }
+   *        不传就是「最新进度」指针用的那份
+   */
+  function snapshot(o) {
+    o = o || {};
+    var last = eng.log[Math.min(qi, eng.log.length - 1)];
     return {
       title: (eng.vars.地点 || '未知地点') + ' · 第' +
              ((eng.vars.时间 && eng.vars.时间.天数) || 1) + '天',
       history: eng.history, vars: eng.vars, log: eng.log,
       phoneSent: eng.phoneSent, phoneSeq: eng.phoneSeq,
-      cursor: qi, opening: currentOpening, runId: runId
+      macroVars: eng.macroVars || {},
+      cursor: qi, opening: currentOpening, runId: runId,
+      /* 存档树 */
+      type: o.type || 'latest',
+      name: o.name || '',
+      node: activeNode,
+      tree: o.nodeId ? { rootId: runId || '', nodeId: o.nodeId, parentNodeId: o.parent || '' }
+                     : { rootId: runId || '', nodeId: '', parentNodeId: '' },
+      round: SaveTree.roundsOf(eng.history),
+      summary: last ? SaveTree.summaryOf({ log: [last] }) : '',
+      /* 读档后还能重roll */
+      turnStack: stackForSave()
     };
   }
-  function autosave() {
+
+  /** @param {object} [o] { skipNode } —— 刚 checkpoint 过就不用再写一遍节点 */
+  function autosave(o) {
     GalStore.saveSlot(autoSlotId(), snapshot()).catch(function (e) {
       console.warn('[存档] 自动保存失败', e);
     });
+    /* 最后一轮的自动节点也跟着更新（CG 图晚到、翻到了别的句子） */
+    var top = turnStack[turnStack.length - 1];
+    if (!(o && o.skipNode) && top && top.turnNode && top.turnNode === activeNode && top.nodeType !== 'manual') {
+      GalStore.saveSlot('node:' + top.turnNode,
+        snapshot({ type: 'auto', nodeId: top.turnNode, parent: top.node })).catch(function () {});
+    }
+  }
+
+  /**
+   * 一轮结束：给这一轮建（或更新）自动节点。
+   * 重roll / 换版本还是同一轮，写回同一个节点，不会一版一个节点地堆。
+   */
+  /* 只有 IndexedDB 才存节点。降级到 localStorage（5MB）时每轮一份完整存档很快就会撑爆，
+     撑爆后 GalStore 会再降级到「只在内存」，那就连最新进度都丢了 —— 所以那种情况下只留
+     「最新进度」和手动存档，和以前一样 */
+  function treeOn() { return GalStore.backend() === 'idb'; }
+
+  async function checkpoint(snap) {
+    if (!runId) runId = newRunId();
+    if (!treeOn()) return;
+    if (!snap.turnNode) snap.turnNode = SaveTree.newId('n');
+    activeNode = snap.turnNode;
+    try {
+      await GalStore.saveSlot('node:' + snap.turnNode,
+        snapshot({ type: 'auto', nodeId: snap.turnNode, parent: snap.node }));
+      await pruneAuto();
+    } catch (e) { console.warn('[存档] 节点保存失败', e); }
+  }
+
+  /** 自动节点超了就删最老的，子节点改挂到没被删的祖先上 */
+  async function pruneAuto() {
+    var list = await GalStore.listSaves();
+    var plan = SaveTree.planPrune(list, runId, activeNode);
+    for (var i = 0; i < plan.reparent.length; i++) {
+      var r = plan.reparent[i];
+      var d = await GalStore.loadSlot(r.id);
+      if (!d) continue;
+      d.tree = Object.assign({}, d.tree || {}, { parentNodeId: r.parentNodeId });
+      await GalStore.saveSlot(r.id, d);
+    }
+    for (var j = 0; j < plan.del.length; j++) await GalStore.deleteSlot(plan.del[j]);
+    return plan;
   }
 
   /**
@@ -2856,10 +3254,21 @@
     eng.log = sv.log || [];
     eng.phoneSent = sv.phoneSent || [];
     eng.phoneSeq = sv.phoneSeq || 0;
+    eng.macroVars = sv.macroVars || {};
     currentOpening = sv.opening || null;
     /* 接着往下玩时，自动存档要落回同一个周目的槽，不能另起一个 */
-    runId = sv.runId ||
+    runId = (sv.tree && sv.tree.rootId) || sv.runId ||
             (id && id.indexOf('auto:') === 0 ? id.slice(5) : null);
+    /* 存档树：读的是节点就站在这个节点上；读的是「最新进度」就站在它记着的节点上 */
+    activeNode = (sv.tree && sv.tree.nodeId) || sv.node || null;
+    /* 回合快照跟着存档走，读档后还能重roll / 撤回。
+       读的是树上的旧节点时，重roll 出来的新版本另起一个节点（成为分支），
+       不去改写那个节点 —— 它下面可能已经长着后来的剧情 */
+    var readNode = !!(sv.tree && sv.tree.nodeId);
+    turnStack = (sv.turnStack || []).map(function (t) {
+      return readNode ? Object.assign({}, t, { turnNode: null }) : t;
+    });
+    if (window.CG && CG.cancel) CG.cancel();
 
     closePhone();
     enterGame();
@@ -2873,6 +3282,7 @@
       textEl.textContent = '已读取存档（' + eng.history.length + ' 轮），但没有剧情记录。继续输入以推进。';
       qi = 0; updateNav();
     }
+    updateTurnUI();
     return true;
   }
 
@@ -2911,7 +3321,7 @@
       var d = await GalStore.loadSlot(list[i].id);
       if (d) pack.saves[list[i].id] = d;
     }
-    if (withImages && global.Gallery) {
+    if (withImages && window.Gallery) {
       pack.images = {};
       try {
         var metas = await Gallery.list();
@@ -2952,13 +3362,14 @@
         while (have[id + '(导入' + k + ')']) k++;
         target = id + '(导入' + k + ')';
       }
-      await GalStore.saveSlot(target, pack.saves[id]);
+      /* 标成「导入」，存档界面里单独一栏；树信息保留，整棵树导出再导入还是一棵树 */
+      await GalStore.saveSlot(target, Object.assign({}, pack.saves[id], { imported: true }));
       have[target] = 1;
       added++;
     }
 
     var imgs = 0;
-    if (pack.images && global.Gallery) {
+    if (pack.images && window.Gallery) {
       var iid = Object.keys(pack.images);
       for (var j = 0; j < iid.length; j++) {
         var it = pack.images[iid[j]];
@@ -2973,6 +3384,36 @@
     return { added: added, renamed: renamed, images: imgs };
   }
 
+  /* ============================================================
+     存读档界面（存档树）
+     ============================================================
+     版式参考 KaiTuoYiShi 的「存档树控制台」：左边一列操作和统计，右边是
+     「全部 / 手动 / 自动 / 导入」标签、开局（树）列表、所选那棵树的节点时间线。
+     以前存档藏在 手机 → 设置 → 存读档 里，很多人根本找不到；现在工具栏 ▤ 直达，
+     手机里那个入口也打开这里。 */
+  var svTab = 'all', svRoot = null;
+  var SV_TYPE = { auto: '自动', manual: '手动', latest: '最新进度' };
+
+  function openSaves() {
+    closePhone();
+    $('save-modal').hidden = false;
+    renderSlots();
+  }
+  function closeSaves() { $('save-modal').hidden = true; }
+
+  function nodeVisible(s) {
+    if (svTab === 'manual') return s.type === 'manual' && !s.imported;
+    if (svTab === 'auto') return (s.type === 'auto' || s.type === 'latest') && !s.imported;
+    if (svTab === 'imported') return !!s.imported;
+    return true;
+  }
+
+  function fmtTime(t) {
+    if (!t) return '';
+    return new Date(t).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit' });
+  }
+
   async function renderSlots() {
     var list;
     try { list = await GalStore.listSaves(); }
@@ -2980,29 +3421,79 @@
       $('slotlist').innerHTML = '<p class="bad">存档读取失败：' + esc(e.message || e) + '</p>';
       return;
     }
+    var trees = SaveTree.buildTrees(list);
+    var all = [];
+    trees.forEach(function (t) { t.nodes.forEach(function (n) { all.push(n.s); }); });
+    var count = function (f) { return all.filter(f).length; };
+    var nAuto = count(function (s) { return (s.type === 'auto' || s.type === 'latest') && !s.imported; });
+    var nManual = count(function (s) { return s.type === 'manual' && !s.imported; });
+    var nImp = count(function (s) { return s.imported; });
+    var branches = trees.reduce(function (t, g) { return t + g.branchCount; }, 0);
+    var kb = trees.reduce(function (t, g) { return t + g.kb; }, 0);
+
+    $('sv-metrics').innerHTML = [
+      [all.length, '节点'], [branches, '分支'], [trees.length, '开局'],
+      [kb >= 1024 ? (kb / 1024).toFixed(1) + 'M' : kb + 'K', '占用']
+    ].map(function (m) { return '<div><b>' + m[0] + '</b><span>' + m[1] + '</span></div>'; }).join('');
+
+    $('sv-tabs').innerHTML = [['all', '全部', all.length], ['manual', '手动', nManual],
+      ['auto', '自动', nAuto], ['imported', '导入', nImp]].map(function (t) {
+      return '<button type="button" data-tab="' + t[0] + '"' + (svTab === t[0] ? ' class="on"' : '') + '>' +
+        t[1] + '<i>' + t[2] + '</i></button>';
+    }).join('');
+
+    var shown = trees.map(function (g) {
+      return Object.assign({}, g, { nodes: g.nodes.filter(function (n) { return nodeVisible(n.s); }) });
+    }).filter(function (g) { return g.nodes.length; });
+    if (!shown.some(function (g) { return g.rootId === svRoot; })) {
+      var mine = shown.filter(function (g) { return runId && g.rootId === runId; })[0];
+      svRoot = (mine || shown[0] || {}).rootId || null;
+    }
+    var cur = shown.filter(function (g) { return g.rootId === svRoot; })[0];
+
+    $('sv-trees').innerHTML = shown.length > 1 || (cur && shown.length) ? shown.map(function (g) {
+      return '<button type="button" class="sv-tree' + (g.rootId === svRoot ? ' on' : '') +
+        '" data-root="' + esc(g.rootId) + '"><b>' + esc(g.title) + '</b>' +
+        (runId && g.rootId === runId ? '<em>当前</em>' : '') +
+        '<span>' + g.nodeCount + ' 节点 · ' + g.branchCount + ' 分支 · 第 ' + ((g.latest && g.latest.round) || 0) +
+        ' 轮</span></button>';
+    }).join('') : '';
+
+    var body = '';
+    if (!cur) {
+      body = '<div class="sv-empty">' + (svTab === 'all' ? '还没有存档。开始游戏后每一轮会自动存一个节点。'
+        : '这个分类下没有存档。') + '</div>';
+    } else {
+      var nodes = cur.nodes.slice().sort(function (a, b) { return b.s.at - a.s.at; });
+      body = '<div class="sv-treehd"><div><b>' + esc(cur.title) + '</b><span>' + cur.nodeCount + ' 个节点 · ' +
+        cur.branchCount + ' 个分支 · ' + (cur.kb >= 1024 ? (cur.kb / 1024).toFixed(1) + ' MB' : cur.kb + ' KB') +
+        '</span></div><div class="sv-treeacts">' +
+        '<button type="button" class="sv-btn" data-exptree="' + esc(cur.rootId) + '">导出整棵树</button>' +
+        '<button type="button" class="sv-btn danger" data-deltree="' + esc(cur.rootId) + '">删除整棵树</button>' +
+        '</div></div><div class="sv-line">' + nodes.map(function (n) {
+        var s = n.s;
+        var isCur = activeNode && s.nodeId === activeNode;
+        var tags = '<i class="t ' + s.type + '">' + (s.imported ? '导入' : SV_TYPE[s.type] || s.type) + '</i>' +
+          (isCur ? '<i class="t cur">当前</i>' : '') + (n.isLatest ? '<i class="t new">最新</i>' : '') +
+          (n.depth > 0 && n.s.parentNodeId && cur.nodes.some(function (m) {
+            return m.children.length > 1 && m.children.indexOf(n) >= 0; }) ? '<i class="t fork">分支</i>' : '');
+        return '<article class="sv-node' + (isCur ? ' cur' : '') + '" style="--d:' + Math.min(n.depth, 6) + '">' +
+          '<div class="sv-ninfo"><div class="sv-ntitle">' + tags + '<b>' + esc(s.name || s.title || '存档') + '</b></div>' +
+          '<div class="sv-nmeta">第 ' + (s.round || 0) + ' 轮 · ' + esc(s.title || '') + ' · ' + fmtTime(s.at) +
+          (s.kb ? ' · ' + s.kb + ' KB' : '') + '</div>' +
+          (s.summary ? '<div class="sv-nsum">' + esc(s.summary) + '</div>' : '') + '</div>' +
+          '<div class="sv-nacts"><button type="button" class="sv-btn primary" data-load="' + esc(s.id) + '">读取</button>' +
+          '<button type="button" class="sv-btn" data-exp="' + esc(s.id) + '">导出</button>' +
+          (s.type === 'manual' ? '<button type="button" class="sv-btn" data-ren="' + esc(s.id) + '">改名</button>' : '') +
+          '<button type="button" class="sv-btn danger" data-del="' + esc(s.id) + '">删除</button></div></article>';
+      }).join('') + '</div>';
+    }
     var note = GalStore.backendNote();
-    $('slotlist').innerHTML =
-      (note ? '<p class="warn" style="margin-bottom:8px">' + esc(note) + '</p>' : '') +
-      '<div class="sv-bar">' +
-        '<button class="kt-btn" id="sv-exp">导出全部</button> ' +
-        '<button class="kt-btn" id="sv-imp">导入备份</button>' +
-        '<label class="sv-chk"><input type="checkbox" id="sv-img"> 连 CG 图一起导（文件会很大）</label>' +
-        '<input type="file" id="sv-file" accept=".json,application/json" hidden>' +
-        '<div class="sv-note" id="sv-note">存档只在这个浏览器里。清缓存、换设备都会没，' +
-        '本地打开的文件和网址也各存各的 —— 玩得久了记得导一份出来。</div>' +
-      '</div>' +
-      (list.length ? list.map(function (s) {
-      /* 自动存档的槽名是 auto:<周目id>，那串随机字符对玩家没有意义。
-         显示成「自动存档 · 开局名」，认得出是哪一局就行。 */
-      var name = s.auto ? ('自动存档' + (s.opening ? ' · ' + s.opening : '')) : s.id;
-      return '<div class="slot"><div><b>' + esc(name) + '</b>' +
-        '<div class="meta">' + esc(s.title) + ' · ' + s.turns + ' 轮 · ' +
-        new Date(s.at).toLocaleString() + '</div></div><div>' +
-        '<button data-load="' + esc(s.id) + '">读取</button> ' +
-        '<button data-exp="' + esc(s.id) + '">导出</button> ' +
-        (s.auto ? '' : '<button data-ren="' + esc(s.id) + '">改名</button> ') +
-        '<button data-del="' + esc(s.id) + '">删除</button></div></div>';
-    }).join('') : '<p class="dim">还没有存档。开始游戏后会自动存一份。</p>');
+    if (note) note += '每轮的自动节点只在 IndexedDB 下才存，现在只保留「最新进度」和手动存档。';
+    $('slotlist').innerHTML = (note ? '<p class="warn" style="margin-bottom:8px">' + esc(note) + '</p>' : '') + body;
+    $('sv-cur').textContent = eng.log.length ? '当前：' + snapshot().title + ' · 第 ' +
+      SaveTree.roundsOf(eng.history) + ' 轮' : '';
+    $('do-save').disabled = !(eng.log.length || eng.history.length);
 
     var note2 = $('sv-note');
     var say = function (t, cls) {
@@ -3023,6 +3514,7 @@
       rd.onload = async function () {
         try {
           var r = await importSaves(String(rd.result));
+          svTab = 'imported';
           /* 必须先重建列表再写提示：renderSlots() 会重建整块 innerHTML，
              先写的话提示立刻就被冲掉了（note2 指向的元素也没了）。 */
           await renderSlots();
@@ -3039,44 +3531,107 @@
       this.value = '';
     };
   }
+
   async function slotClick(e) {
-    var id = e.target.getAttribute('data-load');
+    var el = e.target.closest ? e.target.closest('[data-load],[data-exp],[data-ren],[data-del],[data-tab],[data-root],[data-exptree],[data-deltree]') : null;
+    if (!el) return;
+    var tab = el.getAttribute('data-tab');
+    if (tab) { svTab = tab; renderSlots(); return; }
+    var root = el.getAttribute('data-root');
+    if (root) { svRoot = root; renderSlots(); return; }
+    var id = el.getAttribute('data-load');
     if (id) {
-      restoreFrom(await GalStore.loadSlot(id), id);
+      /* 先把手上的进度落盘，读别的节点不会丢现在这条线 */
+      if (eng.log.length || eng.history.length) {
+        try { await GalStore.saveSlot(autoSlotId(), snapshot()); } catch (err) {}
+      }
+      /* 点的是「最新进度」停着的那个节点：读指针那份 —— 内容一样，但还带着之后翻到哪一句 */
+      var all0 = await GalStore.listSaves();
+      var me0 = all0.filter(function (x) { return x.id === id; })[0];
+      var ptr = me0 && me0.nodeId && all0.filter(function (x) {
+        return x.type === 'latest' && x.rootId === me0.rootId && x.nodeId === me0.nodeId && x.at >= me0.at;
+      })[0];
+      var useId = ptr ? ptr.id : id;
+      var data = await GalStore.loadSlot(useId);
+      if (!data) { toast('这个存档读不出来了。', 'bad'); return; }
+      restoreFrom(data, useId);
+      closeSaves();
+      toast('已读取。接着玩会从这里长出一条新分支，原来那条线不受影响。', 'ok', 6000);
       return;
     }
-    var x = e.target.getAttribute('data-exp');
+    var x = el.getAttribute('data-exp');
     if (x) {
       try { await exportSaves([x], $('sv-img') && $('sv-img').checked); }
       catch (err) { console.warn('[存档] 导出失败', err); }
       return;
     }
-    var r = e.target.getAttribute('data-ren');
+    var xt = el.getAttribute('data-exptree');
+    if (xt) {
+      try { await exportSaves(SaveTree.slotsOfTree(await GalStore.listSaves(), xt), $('sv-img') && $('sv-img').checked); }
+      catch (err) { console.warn('[存档] 导出失败', err); }
+      return;
+    }
+    var r = el.getAttribute('data-ren');
     if (r) {
-      var nn = prompt('新的存档名', r);
-      if (nn && nn.trim() && nn.trim() !== r) {
-        var data = await GalStore.loadSlot(r);
-        if (data) { await GalStore.saveSlot(nn.trim(), data); await GalStore.deleteSlot(r); }
+      var d0 = await GalStore.loadSlot(r);
+      if (!d0) return;
+      var old = d0.name || (SaveTree.isNode(r) ? '' : r);
+      var nn = prompt('新的存档名', old);
+      if (nn && nn.trim() && nn.trim() !== old) {
+        if (SaveTree.isNode(r)) { d0.name = nn.trim(); await GalStore.saveSlot(r, d0); }
+        else { await GalStore.saveSlot(nn.trim(), d0); await GalStore.deleteSlot(r); }
       }
       renderSlots(); return;
     }
-    var d = e.target.getAttribute('data-del');
-    if (d) {
-      if (!confirm('删除存档「' + d + '」？')) return;
-      await GalStore.deleteSlot(d); renderSlots();
+    var del = el.getAttribute('data-del');
+    if (del) {
+      if (!confirm('删除这个存档？删了找不回来。')) return;
+      /* 删中间的节点：它的子节点改挂到它的父节点上，树不断 */
+      var list = await GalStore.listSaves();
+      var me = list.filter(function (s) { return s.id === del; })[0];
+      if (me && me.nodeId) {
+        var kids = list.filter(function (s) { return s.rootId === me.rootId && s.parentNodeId === me.nodeId; });
+        for (var i = 0; i < kids.length; i++) {
+          var kd = await GalStore.loadSlot(kids[i].id);
+          if (!kd) continue;
+          kd.tree = Object.assign({}, kd.tree || {}, { parentNodeId: me.parentNodeId || '' });
+          await GalStore.saveSlot(kids[i].id, kd);
+        }
+        if (activeNode === me.nodeId) activeNode = me.parentNodeId || null;
+      }
+      await GalStore.deleteSlot(del); renderSlots(); renderRuns();
+      return;
+    }
+    var dt = el.getAttribute('data-deltree');
+    if (dt) {
+      var ids = SaveTree.slotsOfTree(await GalStore.listSaves(), dt);
+      if (!confirm('删除这个开局的全部 ' + ids.length + ' 份存档？删了找不回来。')) return;
+      for (var j = 0; j < ids.length; j++) await GalStore.deleteSlot(ids[j]);
+      if (dt === runId) activeNode = null;
+      svRoot = null;
+      renderSlots(); renderRuns();
     }
   }
+
   async function doSave() {
+    if (!(eng.log.length || eng.history.length)) return;
     var name = $('save-name').value.trim();
     if (!name) {
       name = (eng.vars.地点 || '存档') + ' ' +
         new Date().toLocaleString('zh-CN', { hour12: false, month: '2-digit',
-          day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/[/:]/g, '');
+          day: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
-    if (name === 'auto') name = 'auto_' + Date.now();
-    await GalStore.saveSlot(name, snapshot());
+    if (!runId) runId = newRunId();
+    var nodeId = SaveTree.newId('m');
+    await GalStore.saveSlot('node:' + nodeId, snapshot({ type: 'manual', nodeId: nodeId, parent: activeNode, name: name }));
+    activeNode = nodeId;
+    autosave({ skipNode: true });
     $('save-name').value = '';
-    renderSlots();
+    svTab = svTab === 'auto' ? 'all' : svTab;
+    svRoot = runId;
+    await renderSlots();
+    var n = $('sv-note');
+    if (n) { n.className = 'sv-note ok'; n.textContent = '已保存「' + name + '」。之后的自动节点会挂在它下面。'; }
   }
 
   /* ============================================================
@@ -3353,6 +3908,7 @@
     $('cfg-base').value = c.baseUrl; $('cfg-key').value = c.apiKey;
     $('cfg-model').value = c.model; $('cfg-temp').value = c.temperature;
     $('cfg-max').value = c.maxTokens; $('cfg-stream').checked = !!c.stream;
+    $('cfg-post').value = c.postProcess || 'auto'; $('cfg-prefill').value = c.prefillMode || 'auto';
     $('cfg-user').value = GalStore.local('gal_username') || '指挥官';
   }
   function saveCfgFromForm() {
@@ -3361,64 +3917,160 @@
       apiKey: $('cfg-key').value.trim(), model: $('cfg-model').value.trim(),
       temperature: parseFloat($('cfg-temp').value) || 1,
       maxTokens: parseInt($('cfg-max').value, 10) || 4096,
-      stream: $('cfg-stream').checked
+      stream: $('cfg-stream').checked,
+      postProcess: $('cfg-post').value || 'auto',
+      prefillMode: $('cfg-prefill').value || 'auto'
     });
     GalStore.local('gal_username', $('cfg-user').value.trim() || '指挥官');
   }
-  ['cfg-protocol', 'cfg-base', 'cfg-key', 'cfg-model', 'cfg-temp', 'cfg-max', 'cfg-stream', 'cfg-user']
+  ['cfg-protocol', 'cfg-base', 'cfg-key', 'cfg-model', 'cfg-temp', 'cfg-max', 'cfg-stream', 'cfg-user', 'cfg-post', 'cfg-prefill']
     .forEach(function (id) { $(id).addEventListener('change', saveCfgFromForm); });
 
-  $('btn-models').onclick = async function () {
-    saveCfgFromForm();
-    var n = $('test-note');
-    n.textContent = '拉取模型列表…'; n.className = 'note';
-    try {
-      var list = await GalAPI.listModels();
-      if (!list.length) { n.className = 'note warn'; n.textContent = '端点没有返回模型列表，手填吧。'; return; }
-      $('model-list').innerHTML = list.map(function (m) {
-        return '<option value="' + esc(m) + '">';
+  /* 模型下拉：以前用 <datalist>，可模型框里一旦有字，浏览器只显示「和这几个字匹配」的项，
+     看起来就是「拉取了但什么都没有」；手机上 datalist 干脆不弹。换成真正的 <select>。 */
+  function fillModelSelect(list) {
+    var sel = $('cfg-model-sel');
+    var cur = $('cfg-model').value.trim();
+    if (!list || !list.length) { sel.hidden = true; return; }
+    var has = list.indexOf(cur) !== -1;
+    sel.innerHTML = '<option value="">— 这个接口可用的模型（' + list.length + ' 个），点这里选 —</option>' +
+      list.map(function (m) {
+        return '<option value="' + esc(m) + '"' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>';
       }).join('');
-      n.className = 'note ok';
-      n.textContent = '拿到 ' + list.length + ' 个模型，点模型框看下拉。';
-      if (!$('cfg-model').value.trim()) { $('cfg-model').value = list[0]; saveCfgFromForm(); }
-    } catch (e) {
-      n.className = 'note bad';
-      n.textContent = '拉取失败：' + String(e.message || e).split('\n')[0] + '（可以继续手填）';
-    }
-  };
-
-  $('btn-test').onclick = async function () {
+    if (!has) sel.value = '';
+    sel.hidden = false;
+    $('model-list').innerHTML = list.map(function (m) { return '<option value="' + esc(m) + '">'; }).join('');
+    try { GalStore.local('gal_models_cache', { base: $('cfg-base').value.trim(), list: list }); } catch (e) {}
+  }
+  $('cfg-model-sel').onchange = function () {
+    var v = this.value;
+    if (!v) return;
+    $('cfg-model').value = v;
     saveCfgFromForm();
     var n = $('test-note');
-    n.textContent = '连接中…'; n.className = 'note';
+    n.className = 'note';
+    n.textContent = '已选 ' + v + '，再点一次「测试连接」验证它能不能对话。';
+  };
+  /* 上次拉到的列表留着，下次打开不用重拉 */
+  (function () {
     try {
-      var r = await GalAPI.test();
-      n.className = 'note ok';
-      n.textContent = '通了（' + r.ms + 'ms）：' + r.reply;
+      var c = GalStore.local('gal_models_cache');
+      if (c && c.list && c.base === GalAPI.loadConfig().baseUrl) fillModelSelect(c.list);
+    } catch (e) {}
+  })();
+
+  async function runProbe(listOnly) {
+    saveCfgFromForm();
+    var n = $('test-note');
+    var btns = [$('btn-test'), $('btn-models')];
+    btns.forEach(function (b) { b.disabled = true; });
+    n.className = 'note';
+    n.textContent = listOnly ? '拉取模型列表…' : '连接中：先拉模型列表，再发一句话试试…';
+    try {
+      var r = listOnly
+        ? await GalAPI.listModels().then(function (m) { return { models: m }; },
+            function (e) { return { models: [], listError: String(e.message || e).split('\n')[0] }; })
+        : await GalAPI.probe();
+      fillModelSelect(r.models);
+      var parts = [], cls = 'ok';
+      if (r.models && r.models.length) parts.push('拿到 ' + r.models.length + ' 个模型');
+      else if (r.listError) parts.push('模型列表拉不到（' + r.listError + '）');
+      else parts.push('接口没有返回模型列表');
+
+      if (listOnly) {
+        if (!(r.models && r.models.length)) cls = r.listError ? 'bad' : 'warn';
+        else parts.push('在下面的下拉框里选');
+      } else if (!r.model) {
+        cls = r.models.length ? 'warn' : 'bad';
+        parts.push(r.models.length ? '还没选模型：在下面的下拉框里挑一个，再点一次测试' : '也没填模型名，没法测对话');
+      } else if (r.chat) {
+        if (r.chat.verified) {
+          parts.push('对话通了 ' + r.chat.ms + 'ms，' + r.model + ' 正确复述了随机校验码');
+        } else if (!r.chat.reply) {
+          cls = 'warn';
+          parts.push('接口通了（' + r.chat.ms + 'ms），但回复为空：推理模型可能把字数全花在思考上了');
+        } else {
+          cls = 'warn';
+          parts.push('接口通了，但模型没照抄随机校验码（回了「' + r.chat.reply.slice(0, 40) + '」）。' +
+            '可能是中转给的不是这个模型、回的是缓存，或者这个模型不太听指令');
+        }
+        if (r.models.length && r.models.indexOf(r.model) === -1) {
+          parts.push('注意：' + r.model + ' 不在列表里，但能用');
+        }
+        if (r.chat.finish && r.chat.finish.info && r.chat.finish.info.kind === 'filter') {
+          cls = 'warn'; parts.push(r.chat.finish.info.text);
+        }
+      } else {
+        cls = 'bad';
+        parts.push('对话失败：' + r.chatError);
+        if (r.models.length && r.models.indexOf(r.model) === -1) {
+          parts.push('「' + r.model + '」不在这个接口的模型列表里，换一个');
+        }
+      }
+      n.className = 'note ' + cls;
+      n.textContent = parts.join('；');
     } catch (e) {
       n.className = 'note bad';
       n.textContent = String(e.message || e).split('\n')[0];
+    } finally {
+      btns.forEach(function (b) { b.disabled = false; });
     }
-  };
+  }
+  $('btn-models').onclick = function () { runProbe(true); };
+  $('btn-test').onclick = function () { runProbe(false); };
 
   /* ============================================================
      素材载入
      ============================================================ */
   var loaded = { card: false, preset: false };
+
+  /** 宽松解析：Windows 记事本存的 JSON 开头常带 BOM；手改过的预设常留尾逗号；
+      从聊天里复制的会包一层 ```json。这些 JSON.parse 都直接报错，玩家只看到「解析失败」。 */
+  function parseJSONLoose(text) {
+    var t = String(text || '').replace(/^\uFEFF/, '').trim();
+    try { return JSON.parse(t); } catch (e0) {
+      var f = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (f) t = f[1].trim();
+      /* 只在字符串外面删尾逗号 */
+      var out = '', inStr = false, esc2 = false;
+      for (var i = 0; i < t.length; i++) {
+        var ch = t[i];
+        if (inStr) {
+          out += ch;
+          if (esc2) esc2 = false; else if (ch === '\\') esc2 = true; else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') { inStr = true; out += ch; continue; }
+        if (ch === ',') {
+          var j = i + 1;
+          while (j < t.length && /\s/.test(t[j])) j++;
+          if (t[j] === '}' || t[j] === ']') continue;
+        }
+        out += ch;
+      }
+      try { return JSON.parse(out); } catch (e1) { throw e0; }
+    }
+  }
+
   function readJSON(input, cb) {
     input.onchange = function () {
       var f = input.files[0]; if (!f) return;
       var r = new FileReader();
       r.onload = function () {
-        try { cb(JSON.parse(r.result), f.name); input.parentNode.classList.add('ok'); }
+        try { cb(parseJSONLoose(r.result), f.name); input.parentNode.classList.add('ok'); }
         catch (e) { $('assets-note').innerHTML = '<span class="bad">解析失败：' + esc(e.message) + '</span>'; }
       };
       r.readAsText(f);
     };
   }
   function noteAssets() {
+    var rx = eng.regexList('display').filter(function (r) { return !r.disabled && !r.skip; });
+    var rxP = rx.filter(function (r) { return r.source === 'preset'; }).length;
+    var rxU = rx.length - rxP;
     var html = '世界书 <b>' + eng.pool.length + '</b> 条 ｜ 预设 <b>' +
       (loaded.preset ? PromptBuilder.parsePreset(eng.preset).order.length : 0) + '</b> 块' +
+      (rx.length ? ' ｜ 正则 <b>' + rx.length + '</b> 条' +
+        '<span class="dim">（预设自带 ' + rxP + (rxU ? ' · 导入 ' + rxU : '') + '）</span>' : '') +
       (loaded.card ? '' : ' <span class="warn">— 还缺角色卡</span>');
     /* 从卡里抽出来多少立绘 —— 这是用户最关心的一件事（"我的图呢"），
        载完卡就该直接看见数字，而不是等进了游戏发现舞台是空的。 */
@@ -3456,10 +4108,42 @@
     GalStore.putCard(j, name).catch(function () {}); noteAssets();
   });
   readJSON($('f-preset'), function (j, name) {
-    eng.loadPreset(j); loaded.preset = true;
+    eng.loadPreset(j); loaded.preset = true; presetName = name || '';
     GalStore.putPreset(j, name).catch(function () {}); noteAssets();
   });
   readJSON($('f-wi'), function (j) { eng.addWorldbook(j); noteAssets(); });
+
+  /* 单独导入的正则：可多选，追加进已有的；存 localStorage（正则都很短） */
+  function loadUserRegex() {
+    var list = GalStore.local('gal_user_regex');
+    eng.setUserRegex(Array.isArray(list) ? list : []);
+    eng.regexOff = GalStore.local('gal_regex_off') || {};
+  }
+  $('f-regex').onchange = function () {
+    var files = Array.prototype.slice.call(this.files || []);
+    if (!files.length) return;
+    var input = this;
+    Promise.all(files.map(function (f) {
+      return f.text().then(function (t) {
+        try { return GalRegex.fromImport(parseJSONLoose(t)); } catch (e) { return []; }
+      });
+    })).then(function (lists) {
+      var add = [].concat.apply([], lists);
+      var cur = GalStore.local('gal_user_regex') || [];
+      /* 同名的覆盖，不重复堆 */
+      add.forEach(function (r) {
+        var k = r.scriptName || r.findRegex;
+        cur = cur.filter(function (x) { return (x.scriptName || x.findRegex) !== k; });
+        cur.push(r);
+      });
+      GalStore.local('gal_user_regex', cur);
+      loadUserRegex();
+      input.parentNode.classList.add('ok');
+      input.value = '';
+      noteAssets();
+      if (typeof renderPreset === 'function') renderPreset();
+    });
+  };
 
   /* ============================================================
      开始 / 继续
@@ -3479,6 +4163,7 @@
       catch (e) { console.warn('[存档] 退出前保存失败', e); }
     }
     closePhone();
+    closeSaves();
     ['skin-panel', 'cg-panel', 'cg'].forEach(function (id) {
       var el = $(id); if (el) el.hidden = true;
     });
@@ -3495,6 +4180,12 @@
     try { list = await GalStore.listSaves(); }
     catch (e) { list = []; }
     list = list.filter(function (s) { return s.turns > 0; });
+    /* 存档树之后一个开局有很多节点。这里每个开局只列一行（它的最新进度），
+       要读中间的节点去游戏里的存档界面 */
+    var trees = SaveTree.buildTrees(list);
+    var nodeCount = {};
+    trees.forEach(function (g) { nodeCount[(g.pointer || g.latest).id] = g.nodeCount; });
+    list = trees.map(function (g) { return g.pointer || g.latest; }).filter(Boolean);
 
     var box = $('boot-runs'), body = $('boot-runs-body');
     if (!box || !body) return list;
@@ -3505,12 +4196,14 @@
     $('btn-continue').hidden = false;
     $('btn-continue').dataset.slot = list[0].id;
     $('resume-meta').textContent =
-      (list[0].opening || '未命名开局') + ' · ' + list[0].title + ' · ' + list[0].turns + ' 轮';
+      (list[0].opening || '未命名开局') + ' · ' + list[0].title + ' · 第 ' +
+      (list[0].round != null ? list[0].round : list[0].turns) + ' 轮';
 
     body.innerHTML = list.map(function (s) {
       return '<button type="button" class="runrow" data-run="' + esc(s.id) + '">' +
         '<div class="ri"><b>' + esc(s.opening || (s.auto ? '未命名开局' : s.id)) + '</b>' +
-        '<span>' + esc(s.title) + ' · ' + s.turns + ' 轮 · ' +
+        '<span>' + esc(s.title) + ' · 第 ' + (s.round != null ? s.round : s.turns) + ' 轮 · ' +
+        (nodeCount[s.id] > 1 ? nodeCount[s.id] + ' 个存档 · ' : '') +
         new Date(s.at || 0).toLocaleString() + '</span></div>' +
         '<i class="tag">' + (s.auto ? '自动' : '手动') + '</i></button>';
     }).join('');
@@ -3535,18 +4228,29 @@
     var pick = list[parseInt($('opening-sel').value, 10)] || null;
     currentOpening = pick ? pick.n : null;
     runId = newRunId();          // 新周目，自动存档另开一个槽，不碰上一局
+    activeNode = null;           // 新的一棵存档树
+    turnStack = [];
+    eng.macroVars = {};
     eng.history = [];
     eng.log = [];
     eng.phoneSent = [];
     eng.phoneSeq = 0;        // 忘了清它，新周目的手机消息会接着上一局的编号往上加
     if (pick) eng.seedVarsFromOpening(pick.t);   // 开局先把地点/时段/在场角色填好
     enterGame();
+    updateTurnUI();
     if (pick) {
       eng.history.push({ role: 'assistant', content: pick.t });
       var r = eng.processOutput(pick.t);
       lastResult = r; lastRaw = pick.t;
       play(r.modules);
-      autosave();
+      /* 开场本身也是一个节点（树根）：以后想换个方向从头来，读它就行 */
+      if (treeOn()) {
+        var rootNode = SaveTree.newId('n');
+        GalStore.saveSlot('node:' + rootNode,
+          snapshot({ type: 'auto', nodeId: rootNode, parent: '', name: '开场' })).catch(function () {});
+        activeNode = rootNode;
+      }
+      autosave({ skipNode: true });
     } else {
       speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
       textEl.textContent = '输入一句话开始。';
@@ -3561,6 +4265,15 @@
   };
 
   $('btn-exit').onclick = function () { leaveGame(); };
+  $('btn-saves').onclick = openSaves;
+  $('sv-close').onclick = closeSaves;
+  $('save-modal').addEventListener('click', function (e) { if (e.target === this) closeSaves(); });
+  $('do-save').onclick = doSave;
+  $('save-modal').addEventListener('click', slotClick);
+  $('btn-reroll').onclick = function () { rerollLast(); };
+  $('btn-undo').onclick = function () { undoLast(); };
+  $('ver-prev').onclick = function () { switchVariant(-1); };
+  $('ver-next').onclick = function () { switchVariant(1); };
 
   /* ============================================================
      绑定
@@ -3581,6 +4294,7 @@
     else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); advance(); }
     else if (e.key === 'Escape') {
       closePhone();
+      closeSaves();
       var am = $('alias-modal'); if (am) am.remove();
     }
   });
@@ -3614,11 +4328,19 @@
     /* 存档相关的钩子，端到端测试要用 */
     autosave: autosave, leaveGame: leaveGame, renderRuns: renderRuns,
     autoSlotId: function () { return autoSlotId(); },
-    imgFails: function () { return imgFails.slice(); }
+    imgFails: function () { return imgFails.slice(); },
+    toast: toast,
+    /* 重roll / 存档树，测试要用 */
+    rerollLast: rerollLast, undoLast: undoLast, switchVariant: switchVariant,
+    openSaves: openSaves, renderSlots: renderSlots, doSave: doSave, pruneAuto: pruneAuto,
+    turnStack: function () { return turnStack; },
+    activeNode: function () { return activeNode; },
+    submit: function (t) { return submit(t); }
   };
 
   /* 恢复上次的素材与配置 */
   loadCfgToForm();
+  loadUserRegex();
   Promise.all([GalStore.getCard(), GalStore.getPreset(), GalStore.loadSlot('auto')])
     .then(function (r) {
       if (r[0] && r[0].json) {
@@ -3626,7 +4348,7 @@
         $('f-card').parentNode.classList.add('ok');
       }
       if (r[1] && r[1].json) {
-        eng.loadPreset(r[1].json); loaded.preset = true;
+        eng.loadPreset(r[1].json); loaded.preset = true; presetName = r[1].name || '';
         $('f-preset').parentNode.classList.add('ok');
       }
       noteAssets();

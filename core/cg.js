@@ -158,6 +158,9 @@
       var ctx = resolved.shots[i];
       if (!ctx) continue;
       var logIndex = (opt.startIndex || 0) + anchors[i];
+      /* 记住这一句本身。出一张图要十几秒，这期间玩家可能重roll / 撤回 / 换版本，
+         同一个下标上已经是别的句子了 —— 那张图不能挂过去 */
+      var target = eng && eng.log[logIndex];
 
       notify(onUpdate, { type: 'generating', index: i, total: anchors.length, logIndex: logIndex });
 
@@ -186,7 +189,12 @@
         });
 
         /* 挂到那一句上。存档里存的是这个 id，不是图。 */
-        if (eng && eng.log[logIndex]) eng.log[logIndex].cg = id;
+        if (!target || !eng || eng.log[logIndex] !== target) {
+          /* 句子已经不在了：图留在相册里，只是不挂上去 */
+          notify(onUpdate, { type: 'stale', id: id, logIndex: logIndex });
+          continue;
+        }
+        target.cg = id;
         out.push({ id: id, logIndex: logIndex, title: ctx.title || '' });
         notify(onUpdate, { type: 'image', id: id, logIndex: logIndex, index: i, title: ctx.title || '' });
       } catch (e) {

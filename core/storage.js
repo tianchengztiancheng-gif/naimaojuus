@@ -114,34 +114,54 @@
     return Promise.resolve(Object.keys(mem));
   }
 
-  /* ---------- 存档槽 ---------- */
+  /* ---------- 存档槽 ----------
+     每份存档另存一条「目录」记录（META + id），只放列表要显示的摘要。
+     以前打开存档列表要把每一份完整读出来（带全部剧情记录，大的有好几 MB），
+     存档树每轮一个节点之后份数多了，这就太慢了。
+     老存档没有目录记录的，第一次列表时补上。（KaiTuoYiShi 也是这么做的：存档目录 + 按需读取） */
   var SLOT = 'save:';
+  var META = 'savemeta:';
+
+  function summarize(id, v) {
+    if (global.SaveTree) return global.SaveTree.summarize(id, v);
+    return { id: id, at: v && v.at, title: (v && v.title) || '', turns: (v && v.history || []).length,
+             opening: (v && v.opening) || '', runId: (v && v.runId) || '',
+             auto: id === 'auto' || id.indexOf('auto:') === 0 };
+  }
 
   function listSaves() {
     return keys().then(function (ks) {
-      return Promise.all((ks || []).filter(function (k) { return String(k).indexOf(SLOT) === 0; })
+      ks = (ks || []).map(String);
+      var metas = {};
+      ks.forEach(function (k) { if (k.indexOf(META) === 0) metas[k.slice(META.length)] = 1; });
+      return Promise.all(ks.filter(function (k) { return k.indexOf(SLOT) === 0; })
         .map(function (k) {
-          return get(k).then(function (v) {
-            var id = String(k).slice(SLOT.length);
-            return { id: id, at: v && v.at,
-                     title: (v && v.title) || '',
-                     turns: (v && v.history || []).length,
-                     /* 下面三个给界面分组用：自动存档按周目各存各的，
-                        列表要能说清"这是哪个开局的第几天" */
-                     opening: (v && v.opening) || '',
-                     runId: (v && v.runId) || '',
-                     auto: id === 'auto' || id.indexOf('auto:') === 0 };
+          var id = k.slice(SLOT.length);
+          var viaMeta = metas[id] ? get(META + id) : Promise.resolve(null);
+          return viaMeta.then(function (m) {
+            if (m && m.id === id) return m;
+            return get(k).then(function (v) {
+              var sm = summarize(id, v);
+              set(META + id, sm).catch(function () {});
+              return sm;
+            });
           });
         }));
     }).then(function (list) {
-      return list.sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+      return list.filter(Boolean).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
     });
   }
   function saveSlot(id, data) {
-    return set(SLOT + id, Object.assign({ at: Date.now() }, data));
+    var rec = Object.assign({ at: Date.now() }, data);
+    /* 目录后写：正文写成功了目录才更新，不会出现「列表里有、读不出来」 */
+    return set(SLOT + id, rec).then(function (v) {
+      return set(META + id, summarize(id, rec)).then(function () { return v; }, function () { return v; });
+    });
   }
   function loadSlot(id) { return get(SLOT + id); }
-  function deleteSlot(id) { return del(SLOT + id); }
+  function deleteSlot(id) {
+    return del(SLOT + id).then(function () { return del(META + id); });
+  }
 
   /* ---------- 素材（角色卡 / 预设） ---------- */
   function putCard(json, name) {

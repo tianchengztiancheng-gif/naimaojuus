@@ -45,8 +45,8 @@ const FILES = [
   'resource/aliases.js',
   'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
-  'core/resolver.js', 'core/worldbook.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
+  'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
+  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -1079,8 +1079,10 @@ console.log('\n[6w6] 四条小修（错误兜底 / 输入法 / 保住文字 / �
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
   /* ① 全局错误兜底 */
+  ok('core/ 与 app/ 的脚本样式都带版本号（防 Pages 缓存新旧混用）',
+     !/<script src="(core|app)\/[\w-]+\.js">/.test(html) && !/href="app\/[\w-]+\.css">/.test(html));
   ok('crash.js 是第一个加载的脚本',
-     /<script src="core\/crash\.js">/.test(html) &&
+     /<script src="core\/crash\.js(\?v=[\w.]+)?">/.test(html) &&
      html.indexOf('core/crash.js') < html.indexOf('core/cardres.js'));
   ok('GalCrash 挂上了', typeof w.GalCrash === 'object');
   ok('能主动上报', (function () {
@@ -1099,7 +1101,7 @@ console.log('\n[6w6] 四条小修（错误兜底 / 输入法 / 保住文字 / �
   ok('keyCode 229 也兜住（旧浏览器/部分安卓输入法）', /keyCode === 229/.test(srcApp));
 
   /* ③ 失败时把文字还回输入框 */
-  ok('catch 里还原输入框', /if \(!input\.value\) \{[\s\S]{0,80}input\.value = userText/.test(srcApp));
+  ok('catch 里还原输入框', /if \((fromInput && )?!input\.value\) \{[\s\S]{0,80}input\.value = userText/.test(srcApp));
 
   /* ④ 限流重试 */
   ok('429 算可重试', w.GalAPI.isTransient({ status: 429 }) === true);
@@ -1135,10 +1137,12 @@ console.log('\n[6w7] 存档导出 / 导入');
   ok('包有格式标识，防止导错文件', /kind !== SAVE_PACK/.test(srcApp));
   ok('CG 图默认不打包（一张 1~2MB）', /withImages/.test(srcApp));
   ok('导入后先重建列表再写提示', /await renderSlots\(\);[\s\S]{0,80}sv-note/.test(srcApp));
-  ok('自动存档不显示原始周目 id', /s\.auto \? \('自动存档'/.test(srcApp));
-  ok('面板上有导出/导入按钮', /id="sv-exp"/.test(srcApp) && /id="sv-imp"/.test(srcApp));
+  /* v5.21 起存档界面在 index.html 里（#save-modal），不再由 app.js 拼 */
+  const srcIdx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  ok('自动存档不显示原始周目 id（显示「最新进度」/ 开局名）', /latest: '最新进度'/.test(srcApp) && !/esc\(s\.runId\)/.test(srcApp));
+  ok('面板上有导出/导入按钮', /id="sv-exp"/.test(srcIdx) && /id="sv-imp"/.test(srcIdx));
   ok('每条存档有单独导出', /data-exp="/.test(srcApp));
-  ok('提示了数据会丢的风险', /清缓存、换设备都会没/.test(srcApp));
+  ok('提示了数据会丢的风险', /清缓存、换设备都会没/.test(srcIdx));
 }
 
 console.log('\n[6x] token 计数');
@@ -1193,8 +1197,108 @@ run(() => d.getElementById('dialogue').click(), '点击对话框');
 run(() => d.getElementById('nav-next').click(), '下一句');
 run(() => d.getElementById('nav-prev').click(), '上一句');
 
+(async () => {
+console.log('\n[7b] 测试连接 → 拉模型列表（v5.21）');
+{
+  const oldFetch = w.fetch;
+  const J = o => Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+    json: async () => o, text: async () => JSON.stringify(o) });
+  let echo = true;
+  w.fetch = (url, init) => {
+    if (/\/models/.test(url)) return J({ data: [{ id: 'model-b' }, { id: 'model-a' }] });
+    const code = ((init && init.body) || '').match(/GAL-[0-9A-F]{8}/);
+    return J({ choices: [{ message: { content: echo && code ? code[0] : 'ok' }, finish_reason: 'stop' }] });
+  };
+  const $ = id => d.getElementById(id);
+  $('cfg-base').value = 'https://relay.example'; $('cfg-key').value = 'sk-x'; $('cfg-model').value = '';
+  $('btn-test').click();
+  await new Promise(r => setTimeout(r, 50));
+  const sel = $('cfg-model-sel');
+  ok('没填模型也能点测试，拿到列表', !sel.hidden && sel.options.length === 3, $('test-note').textContent);
+  ok('提示去下拉框里挑', /挑一个|下拉/.test($('test-note').textContent), $('test-note').textContent);
+  sel.value = 'model-a'; sel.dispatchEvent(new w.Event('change'));
+  ok('选中后填进模型框并保存', $('cfg-model').value === 'model-a' && w.GalAPI.loadConfig().model === 'model-a');
+  $('btn-test').click();
+  await new Promise(r => setTimeout(r, 50));
+  ok('再测一次：对话通了、校验码对上', /正确复述了随机校验码/.test($('test-note').textContent), $('test-note').textContent);
+  ok('测试期间按钮会恢复可点', !$('btn-test').disabled);
+  echo = false;
+  $('btn-test').click();
+  await new Promise(r => setTimeout(r, 50));
+  ok('模型没照抄随机校验码 → 黄色警告而不是「通了」', /没照抄/.test($('test-note').textContent) &&
+     /warn/.test($('test-note').className), $('test-note').textContent);
+  ok('消息后处理 / 助手预填 两个选项在且会保存', (() => {
+    $('cfg-post').value = 'single'; $('cfg-post').dispatchEvent(new w.Event('change'));
+    $('cfg-prefill').value = 'off'; $('cfg-prefill').dispatchEvent(new w.Event('change'));
+    const c = w.GalAPI.loadConfig();
+    const r = c.postProcess === 'single' && c.prefillMode === 'off';
+    $('cfg-post').value = 'auto'; $('cfg-post').dispatchEvent(new w.Event('change'));
+    $('cfg-prefill').value = 'auto'; $('cfg-prefill').dispatchEvent(new w.Event('change'));
+    return r; })());
+  w.fetch = oldFetch;
+}
+
+console.log('\n[7c] 预设正则 / 导入正则 / 截断提示（v5.21）');
+{
+  const eng = w.__gal.eng;
+  const keep = eng.preset;
+  eng.loadPreset(Object.assign({}, keep || {}, { extensions: { regex_scripts: [
+    { scriptName: '藏思维链', findRegex: '/<mythink>[\\s\\S]*?<\\/mythink>/g', replaceString: '', placement: [2], markdownOnly: true, promptOnly: true }
+  ] } }));
+  const r = eng.processOutput('<mythink>不该看到</mythink>\n一句旁白。');
+  ok('预设正则在显示里生效', !/不该看到/.test(r.text), r.text);
+  w.__gal.reload();
+  ok('预设面板里列出正则', /藏思维链/.test(d.getElementById('pre-list').innerHTML));
+  ok('点正则打开详情，试跑能出结果', (() => {
+    const row = d.querySelector('#pre-list [data-rx="preset:藏思维链"] .kt-i-main');
+    if (!row) return false;
+    row.click();
+    const sample = d.getElementById('rx-sample');
+    if (!sample) return false;
+    sample.value = 'a<mythink>x</mythink>b'; sample.dispatchEvent(new w.Event('input'));
+    return d.getElementById('rx-out').value === 'ab' && /命中 1/.test(d.getElementById('rx-stat').textContent);
+  })());
+  eng.loadPreset(keep);
+  ok('截断提示不炸', (() => { try { w.__gal.toast('测试', 'warn', 50); return !!d.getElementById('gal-toast'); } catch (e) { return false; } })());
+  ok('正则导入框在', !!d.getElementById('f-regex'));
+}
+
+console.log('\n[7d] 重roll / 撤回 / 版本切换 / 存档树（v5.21）');
+{
+  const g = w.__gal, $ = id => d.getElementById(id);
+  const oldFetch = w.fetch;
+  let n = 0;
+  w.fetch = () => { n++; return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+    text: async () => JSON.stringify({ choices: [{ message: { content: '「第' + n + '版。」|旁白|-|' }, finish_reason: 'stop' }] }) }); };
+  w.GalAPI.saveConfig({ protocol: 'openai', baseUrl: 'https://fake', apiKey: 'k', model: 'm', stream: false });
+  const depth0 = g.turnStack().length;
+  await g.submit('测试一句');
+  const top = () => g.turnStack()[g.turnStack().length - 1];
+  ok('发一轮后记下回合快照、重roll 可点', g.turnStack().length === depth0 + 1 && !$('btn-reroll').disabled);
+  const users = () => g.eng.history.filter(m => m.role === 'user' && m.content === '测试一句').length;
+  await g.rerollLast();
+  ok('重roll：换成新版本，历史里那句话没有重复', /第2版/.test(g.eng.log.map(m => m.text).join()) && users() === 1 &&
+     top().variants.length === 2, g.eng.log.map(m => m.text).join('|'));
+  ok('版本切换器显示 2/2', !$('turn-ver').hidden && $('ver-n').textContent === '2/2');
+  g.switchVariant(-1);
+  ok('切回第 1 版不发请求', /第1版/.test(g.eng.log.map(m => m.text).join()) && n === 2 && top().vi === 0);
+  await g.undoLast();
+  ok('撤回：那句话回到输入框，历史里没了', $('usertext').value === '测试一句' && users() === 0);
+  $('usertext').value = '';
+  const list = await w.GalStore.listSaves();
+  ok('存档目录有摘要索引（不用整份读）', list.every(s => 'round' in s && 'rootId' in s));
+  g.openSaves();
+  await new Promise(r => setTimeout(r, 50));
+  ok('存档界面能打开、有标签和统计', !$('save-modal').hidden && $('sv-tabs').children.length === 4 &&
+     $('sv-metrics').children.length === 4);
+  $('sv-close').click();
+  ok('关得掉', $('save-modal').hidden);
+  w.fetch = oldFetch;
+}
+
 console.log('\n[8] 运行期未捕获错误');
 ok('无 window error', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 console.log('\n' + (fails ? '✘ ' + fails + ' 项失败' : '✔ 全部 ' + checks + ' 项通过'));
 process.exit(fails ? 1 : 0);
+})();
