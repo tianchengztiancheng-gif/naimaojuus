@@ -32,3 +32,6 @@ _probe*
 _tmp*
 *-tmp.*
 v[0-9]*.mjs
+
+# ── Claude 桌面端放截图的地方，不进仓库 ──
+Claude outputs/

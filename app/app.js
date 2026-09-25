@@ -2425,7 +2425,10 @@
       '<div class="kt-ghead"><span class="arw">▶</span>正 则<span class="cnt">' + list.length + '</span></div>' +
       '<div class="kt-gbody">' + list.map(function (r) {
         var key = r.source + ':' + r.name;
-        var note = r.skip ? '已跳过：' + r.skip
+        var tagNote = r.renderTags && r.renderTags.length
+          ? '舞台画不了 HTML 卡片：<' + r.renderTags.join('> <') + '> 块改成选项按钮（像选项的话）或旁白' : '';
+        var note = tagNote ? tagNote + (r.promptOnly ? ' · 提示词里照常' : '')
+          : r.skip ? '已跳过：' + r.skip
           : r.htmlOnly ? '替换成 HTML 美化，舞台不渲染 HTML，只在提示词里生效'
           : r.hideHtml ? '折叠块 → 这里直接隐藏' : where(r);
         if (r.source === 'card') note += ' · 卡的显示正则仍走老路径';
@@ -4171,13 +4174,17 @@
     };
   }
   function noteAssets() {
-    var rx = eng.regexList('display').filter(function (r) { return !r.disabled && !r.skip; });
+    var rx = eng.regexList('display').filter(function (r) { return !r.disabled; });
+    /* 酒馆助手（Tavern Helper）的脚本是 JS，这里不运行 —— 跑别人预设里的代码等于把密钥交出去 */
+    var th = eng.preset && eng.preset.extensions && eng.preset.extensions.tavern_helper;
+    var thN = th && Array.isArray(th.scripts) ? th.scripts.length : 0;
     var rxP = rx.filter(function (r) { return r.source === 'preset'; }).length;
     var rxU = rx.length - rxP;
     var html = '世界书 <b>' + eng.pool.length + '</b> 条 ｜ 预设 <b>' +
       (loaded.preset ? PromptBuilder.parsePreset(eng.preset).order.length : 0) + '</b> 块' +
       (rx.length ? ' ｜ 正则 <b>' + rx.length + '</b> 条' +
-        '<span class="dim">（预设自带 ' + rxP + (rxU ? ' · 导入 ' + rxU : '') + '）</span>' : '') +
+        '<span class="dim">（预设自带 ' + rxP + (rxU ? ' · 导入 ' + rxU : '') + '，默认按它们自己的开关启用）</span>' : '') +
+      (thN ? ' ｜ <span class="dim">酒馆助手脚本 ' + thN + ' 个（JS，不运行）</span>' : '') +
       (loaded.card ? '' : ' <span class="warn">— 还缺角色卡</span>');
     /* 从卡里抽出来多少立绘 —— 这是用户最关心的一件事（"我的图呢"），
        载完卡就该直接看见数字，而不是等进了游戏发现舞台是空的。 */

@@ -149,6 +149,16 @@
     });
   };
 
+  /** 这个预设 / 导入正则认定的思维链标签（兜底剥思维链时一起认，见 GalRegex.learnCotTags） */
+  Engine.prototype.cotTags = function () {
+    return global.GalRegex ? global.GalRegex.learnCotTags(this.regexList('prompt')) : [];
+  };
+  /** 剥思维链，带上从预设学到的标签名 */
+  Engine.prototype.stripCot = function (text) {
+    return global.GalRegex ? global.GalRegex.stripReasoning(text, this.cotTags())
+                           : { text: String(text || ''), stripped: false, unclosed: false, onlyReasoning: false };
+  };
+
   /** 发给模型之前，按酒馆语义处理历史：
       剥掉旧的思维链、跑 promptOnly / 普通正则（带深度筛选）。
       存档里的原文不动。 */
@@ -159,17 +169,23 @@
     var ctx = { charName: this.card && (this.card.data || this.card).name,
                 userName: this.cfg.userName || '指挥官' };
     var total = hist.length + (userText ? 1 : 0);
+    var tags = this.cotTags();
+    /* 正则的替换内容里常带宏：TG 破限把玩家输入包成 <player_input>$1{{getvar::supernsfw}}</player_input>。
+       这些宏要等预设块里的 setvar 求值之后才有值，所以这里只做标记（_macro），
+       由 PromptBuilder.build() 在预设块之后展开 */
+    function macroMark(before, after) { return after !== before && /\{\{/.test(after) && !/\{\{/.test(before); }
     var out = hist.map(function (m, i) {
       var depth = total - 1 - i;
       var c = m.content;
-      if (m.role === 'assistant') c = R.stripPlaceholders(R.stripReasoning(c).text || c, null, true);
-      c = R.run(c, scripts, { mode: 'prompt', depth: depth, ctx: ctx,
+      if (m.role === 'assistant') c = R.stripPlaceholders(R.stripReasoning(c, tags).text || c, null, true);
+      var c2 = R.run(c, scripts, { mode: 'prompt', depth: depth, ctx: ctx,
         placement: m.role === 'user' ? R.PLACE.USER : R.PLACE.AI });
-      return c === m.content ? m : Object.assign({}, m, { content: c });
+      if (c2 === m.content) return m;
+      return Object.assign({}, m, { content: c2, _macro: macroMark(c, c2) });
     });
     var u = userText ? R.run(userText, scripts,
       { mode: 'prompt', depth: 0, ctx: ctx, placement: R.PLACE.USER }) : userText;
-    return { hist: out, userText: u };
+    return { hist: out, userText: u, userMacro: !!userText && macroMark(userText, u) };
   };
 
   /** 额外世界书（独立 .json 导出的 World Info） */
@@ -212,6 +228,7 @@
     var ph = this.promptHistory(hist, userText);
     var built = global.PromptBuilder.build({
       preset: this.preset, card: this.card, history: ph.hist, userText: ph.userText,
+      userTextMacro: ph.userMacro,
       worldbook: wb,
       charName: opt.charName || (this.card && (this.card.data || this.card).name),
       userName: opt.userName || '指挥官',
@@ -425,7 +442,7 @@
       temperature: opt.temperature
     });
     /* 推理模型在独立通道里也可能先吐 <think>，手机消息里不该出现 */
-    if (global.GalRegex && typeof out === 'string') out = global.GalRegex.stripReasoning(out).text || out;
+    if (global.GalRegex && typeof out === 'string') out = this.stripCot(out).text || out;
     return out;
   };
 
@@ -581,7 +598,7 @@
        （手机标签、变量更新），不先摘掉会被当成真的认领 */
     this.lastReasoning = null;
     if (global.GalRegex) {
-      var sr = global.GalRegex.stripReasoning(text);
+      var sr = this.stripCot(text);
       this.lastReasoning = sr;
       if (sr.stripped) { text = sr.text; applied.push(sr.unclosed ? '去思维链(未闭合)' : '去思维链'); }
       text = global.GalRegex.stripPlaceholders(text, applied);
@@ -630,6 +647,11 @@
                userName: this.cfg.userName || '指挥官' }
       });
     }
+
+    /* 预设里那些「把某个标签块渲染成 HTML 卡片」的正则（行动选项、特写卡片……）舞台执行不了。
+       不处理的话，<w2g> 这种标签会被当成一句旁白演出来。能认出是选项的改成真正的选项按钮，
+       其余的去掉标签、内容当旁白 */
+    if (global.GalRegex) text = tidyRenderBlocks(text, global.GalRegex.renderTagsOf(this.regexList('display')), applied);
 
     var parsed = global.ScriptParser.parse(text, { order: this.cfg.scriptOrder });
     var self = this;
@@ -772,7 +794,7 @@
   Engine.prototype.historyTextOf = function (raw) {
     var keep = String(raw == null ? '' : raw);
     if (global.GalRegex) {
-      keep = global.GalRegex.stripReasoning(keep).text || keep;
+      keep = this.stripCot(keep).text || keep;
       keep = global.GalRegex.stripPlaceholders(keep, null, true) || keep;
     }
     return keep;
@@ -784,7 +806,7 @@
     if (!t.trim()) return true;
     var R = global.GalRegex;
     if (!R) return false;
-    t = R.stripPlaceholders(R.stripReasoning(t).text);
+    t = R.stripPlaceholders(this.stripCot(t).text);
     /* 只剥「空壳标签」<content></content> 这种；<背景|港区> 这类剧本行里有内容，不能算空 */
     return !t.replace(/<\/?[A-Za-z_][\w-]*\s*>/g, '').trim();
   };
@@ -796,6 +818,36 @@
     return global.天青_api.chat({ messages: messages, stream: false });
   }
 
+  var OPT_HEAD = /^(?:[A-Za-z]|[0-9]{1,2}|[一二三四五六七八九十])\s*[.．、:：)）]\s*/;
+  function escRe(t) { return String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  /**
+   * @param {string[]} tags 渲染器正则负责的标签（GalRegex.renderTagsOf）
+   * 块里每行都是「A：…」「1. …」这种 → 转成 <choice>[…][…]</choice>，舞台上就是选项按钮；
+   * 否则去掉标签，内容当旁白。最后把落单的纯标签行（<xxx> / </xxx>）清掉 ——
+   * 剧本解析会把它当成一句只有标签名的旁白。
+   */
+  function tidyRenderBlocks(text, tags, applied) {
+    (tags || []).forEach(function (t) {
+      var re = new RegExp('<' + escRe(t) + '(?:\\s[^<>]*)?>([\\s\\S]*?)<\\/' + escRe(t) + '\\s*>', 'g');
+      text = text.replace(re, function (m, inner) {
+        var lines = inner.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+        var opts = lines.filter(function (l) { return OPT_HEAD.test(l); });
+        if (opts.length >= 2 && opts.length >= lines.length - 1) {
+          if (applied) applied.push('<' + t + '> → 选项');
+          return '\n<choice>' + opts.map(function (l) {
+            return '[' + l.replace(OPT_HEAD, '').replace(/[\[\]]/g, '') + ']';
+          }).join('') + '</choice>\n';
+        }
+        if (applied) applied.push('<' + t + '> → 旁白');
+        return '\n' + inner.trim() + '\n';
+      });
+    });
+    return text.replace(/^[ \t]*<\/?([A-Za-z_][\w-]*)[ \t]*>[ \t]*$/gm, function (m, name) {
+      return /^(Gal|content|choice|env)$/i.test(name) ? m : '';
+    });
+  }
+
   global.Engine = Engine;
+  Engine.tidyRenderBlocks = tidyRenderBlocks;
   global.Engine.DEFAULTS = DEFAULTS;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,7 +3,7 @@
 import { execFileSync } from 'child_process';
 import path from 'path'; import { fileURLToPath } from 'url';
 const here = path.dirname(fileURLToPath(import.meta.url));
-const files = ['test-imagegen','test-snapshot','test-shots','test-gallery','test-cg','test-cardres','test-tokens','test-vector','test-phone','test-preset','test-kt-parity','test-savetree'];
+const files = ['test-imagegen','test-snapshot','test-shots','test-gallery','test-cg','test-cardres','test-tokens','test-vector','test-phone','test-preset','test-kt-parity','test-savetree','test-preset-regex'];
 let bad = 0, total = 0;
 for (const f of files) {
   try {

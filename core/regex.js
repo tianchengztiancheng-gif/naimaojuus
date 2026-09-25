@@ -80,9 +80,16 @@
     };
     if (!re && s.substitute && s.find.trim()) s.re = null;            // 要等宏替换后才编译
     else if (!re) s.skip = s.find.trim() ? '正则写法 JS 不支持' : '没有查找正则';
-    else if (rep.length > MAX_REPLACE) s.skip = '替换内容是渲染器（' + rep.length + ' 字），我们有自己的舞台';
-    else if (/<details[\s>]/i.test(rep)) s.hideHtml = true;        // 折叠块 = 隐藏
-    else if (/<\/?[a-z][a-z0-9-]*(\s[^<>]*)?>/i.test(rep)) s.htmlOnly = true;
+    /* 折叠块要先判：「思维链美化」这类正则的替换内容往往是两三千字的 <details> 折叠卡片，
+       以前先按长度判成「渲染器」跳过了 —— 结果思维链既没折叠也没隐藏，整段演在台词里 */
+    else if (/<details[\s>]/i.test(rep) && COT_NAME.test(s.name)) s.hideHtml = true;   // 思维链折叠块 = 隐藏
+    else if (rep.length > MAX_REPLACE || /<details[\s>]/i.test(rep)) {
+      s.skip = '替换内容是渲染器（' + rep.length + ' 字），舞台不渲染 HTML';
+      /* 记下它渲染的是哪个标签块（<w2g>…</w2g> 这种）。舞台上不能原样演出标签，
+         引擎会把这块内容改成选项或者普通旁白，见 engine.js 的 tidyRenderBlocks */
+      s.renderTags = tagsIn(s.find);
+    }
+    else if (/<\/?[a-z][a-z0-9-]*(\s[^<>]*)?>/i.test(rep)) { s.htmlOnly = true; s.renderTags = tagsIn(s.find); }
     return s;
   }
 
@@ -96,6 +103,49 @@
       });
     }
     return [];
+  }
+
+  /* 名字像「思维链」的正则。<details> 折叠只有这类才当「隐藏」，别的折叠卡片（特写、状态栏）内容照常显示 */
+  var COT_NAME = /思维|思考|推理|想法|think|cot|reason|draft/i;
+
+  /** 查找正则里出现的标签名：'/<w2g>([\\s\\S]*?)<\\/w2g>/g' → ['w2g'] */
+  var SKIP_TAGS = { content: 1, gal: 1, details: 1, summary: 1, div: 1, span: 1, br: 1, p: 1 };
+  function tagsIn(find) {
+    var out = [], m, re = /<\\?\/?([A-Za-z_][\w-]*)/g;
+    while ((m = re.exec(String(find || '')))) {
+      var t = m[1];
+      if (!SKIP_TAGS[t.toLowerCase()] && out.indexOf(t) === -1) out.push(t);
+    }
+    return out;
+  }
+
+  /**
+   * 从预设正则里学出「这个预设的思维链叫什么标签」。
+   * 每个预设的思维链标签都不一样（TG 破限是 <draft_notes>，有的叫 <plan>、<分析>），
+   * 内置兜底只认常见名字。名字里带「思维 / 思考 / 推理 / think / cot / draft」的正则，
+   * 它查找的标签就当思维链标签，加进兜底名单 —— 这样即使那条正则本身没法执行
+   * （替换内容是 HTML 渲染器），思维链也能剥掉。
+   */
+  function learnCotTags(scripts) {
+    var out = [];
+    (scripts || []).forEach(function (s) {
+      if (!s || s.disabled) return;
+      if (!COT_NAME.test(s.name || '')) return;
+      tagsIn(s.find).forEach(function (t) { if (out.indexOf(t) === -1) out.push(t); });
+    });
+    return out;
+  }
+
+  /** 替换内容是渲染器、被跳过的那些正则，它们各自负责哪个标签块 */
+  function renderTagsOf(scripts) {
+    var out = [];
+    (scripts || []).forEach(function (s) {
+      if (!s || s.disabled || !s.renderTags) return;
+      if (s.promptOnly && !s.markdownOnly) return;
+      if (s.placement.length && s.placement.indexOf(PLACE.AI) === -1) return;
+      s.renderTags.forEach(function (t) { if (out.indexOf(t) === -1) out.push(t); });
+    });
+    return out;
   }
 
   function collect(list, source, opt) {
@@ -238,18 +288,29 @@
      预设正则只认它自己那个标签名；模型偶尔换个名字、或者被截断没写闭合标签，
      整段推理就漏出来。这一层专门接住这些。
      ------------------------------------------------------------ */
-  var COT_NAMES = '(?:think|thinking|thought|thoughts|reasoning|cot|[A-Za-z]+_cot|思考|思维链|思维|思考过程|内心思考)';
-  var COT_PAIR = new RegExp('<(' + COT_NAMES + ')(?:\\s[^<>]*)?>[\\s\\S]*?<\\/\\1\\s*>', 'gi');
-  var COT_OPEN = new RegExp('<' + COT_NAMES + '(?:\\s[^<>]*)?>', 'i');
-  var COT_CLOSE = new RegExp('<\\/' + COT_NAMES + '\\s*>', 'gi');
+  var COT_BASE = 'think|thinking|thought|thoughts|reasoning|cot|[A-Za-z]+_cot|draft_notes|思考|思维链|思维|思考过程|内心思考';
+  var cotCache = {};
+  function escTag(t) { return String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  /** extra：从预设正则里学到的标签名（learnCotTags） */
+  function cotRe(extra) {
+    var key = (extra || []).join('|');
+    if (cotCache[key]) return cotCache[key];
+    var names = '(?:' + COT_BASE + (key ? '|' + (extra || []).map(escTag).join('|') : '') + ')';
+    return (cotCache[key] = {
+      PAIR: new RegExp('<(' + names + ')(?:\\s[^<>]*)?>[\\s\\S]*?<\\/\\1\\s*>', 'gi'),
+      OPEN: new RegExp('<' + names + '(?:\\s[^<>]*)?>', 'i'),
+      CLOSE: new RegExp('<\\/' + names + '\\s*>', 'gi')
+    });
+  }
   /* 正文开始的标志：<content>、『地点』抬头、剧本行「台词|角色|」、<Gal>、<背景|> */
   var BODY_START = /<content>|<Gal>|『|<背景\s*\||^[^\n|<>]{1,300}\|[^\n|]{1,40}\|/m;
 
   /**
    * @returns {{text, stripped:boolean, unclosed:boolean, onlyReasoning:boolean}}
    */
-  function stripReasoning(text) {
+  function stripReasoning(text, extra) {
     text = String(text == null ? '' : text);
+    var R = cotRe(extra), COT_PAIR = R.PAIR, COT_OPEN = R.OPEN, COT_CLOSE = R.CLOSE;
     var orig = text;
     var unclosed = false;
     text = text.replace(COT_PAIR, '');
@@ -319,6 +380,7 @@
     PLACE: PLACE, parseFind: parseFind, normalize: normalize, collect: collect,
     fromPreset: fromPreset, fromCard: fromCard, fromImport: fromImport,
     eligible: eligible, run: run, applyOne: applyOne, stripReasoning: stripReasoning,
-    stripPlaceholders: stripPlaceholders, dryRun: dryRun, rawFromPreset: rawFromPreset, asList: asList
+    stripPlaceholders: stripPlaceholders, dryRun: dryRun, rawFromPreset: rawFromPreset, asList: asList,
+    tagsIn: tagsIn, learnCotTags: learnCotTags, renderTagsOf: renderTagsOf
   };
 })(typeof window !== 'undefined' ? window : globalThis);

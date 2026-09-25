@@ -430,7 +430,7 @@
     };
 
     var history = (o.history || []).slice();
-    if (o.userText) history = history.concat([{ role: 'user', content: o.userText }]);
+    if (o.userText) history = history.concat([{ role: 'user', content: o.userText, _macro: !!o.userTextMacro }]);
 
     var out = [], report = [];
     var histStart = -1, histEnd = -1;
@@ -530,7 +530,9 @@
           report.push({ tag: 'WI@depth' + fromEnd, role: 'system', chars: txt.length });
         }
       }
-      var c = simpleMacros(m.content, ctx).trim();
+      /* _macro：正则往这条消息里塞了宏（{{getvar::…}}），要完整展开；
+         预设块已经先求值过，setvar 设的值这时都在了 */
+      var c = (m._macro ? macros(m.content, ctx) : simpleMacros(m.content, ctx)).trim();
       if (!c) return;
       out.push({ role: m.role, content: c });
       report.push({ tag: 'history', role: m.role, chars: c.length });
