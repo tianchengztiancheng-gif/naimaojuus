@@ -1083,6 +1083,32 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
   再加就得在 `html.m-port` 下缩键或者换行了（`e2e-mobile` 的「一排键全在屏幕里」会报）。
 - 测试：`e2e-mobile.mjs` 「手动横竖屏」「工具栏收起」两节（191 项），冒烟 [7f]。
 
+## 七·十六、图片网络（v5.24，core/imgnet.js）
+
+- **为什么有这个**：立绘背景全是外链（catbox / huggingface），国内要代理。手机代理没覆盖图床时图全裂。
+  页面修不了网络，但能：直连不通走中转（默认 `https://wsrv.nl/?url=<编码后的原地址>&w=&h=&fit=inside&we&output=webp&q=82`，
+  gif 加 `n=-1` 保留动图；长边电脑 2048、手机 1600，`applyDeviceClasses()` 里 `ImgNet.setMaxEdge()`）、每轮先预拉、给诊断。
+- **账本**（按图床）：直连成 / 败、中转成 / 败。`auto` 模式下「直连一张没成过，且连败 2 张（或败 1 张而中转成了）」判 `bad`，
+  存 `localStorage.gal_imgnet_hosts`（12 小时）；直连成功一次就撤。**判 bad 不立刻提示**，等中转真拉到图了才发 `hostbad`
+  （都不通时说「已改走中转」是骗人）；直连和中转一张都没成、累计失败 ≥4 发 `allbad`。app.js 里两个事件都是 toast。
+- **怎么接到页面上**（`ImgNet.attach(document)`）：
+  - document 捕获阶段的 `error`：`<img>` 挂了、还有下一个候选就换上并 `stopImmediatePropagation()` ——
+    这样元素自己的 `onerror`（`swap()` 的 failed、makeChar 的「挂了就藏」、手机里那些内联 onerror）不会先执行；
+    候选都试完了才放行，原来的死链兜底（退原皮 → 藏层）照旧。
+  - 捕获阶段的 `load`：记直连 / 中转成功。
+  - MutationObserver：图床已判 bad（或模式是总走中转）时，新插入 / 改 src 的 `<img>` 直接换成中转地址，不用先等直连超时。
+  - 背景是 CSS background，没有 error 事件，所以 `paintBG()` 先 `ImgNet.load()` 拉到手再淡入，`bgTok` 只认最后一次；拉不到留旧图。
+  - 立绘 `swap()` 里 `img.src = ImgNet.srcFor(url)`。
+- **等图**：`waitImages(mods)` 在 `submit()` 的 `play()` 之前 await、开场在 `btn-start` 里 `.then(play)`（`runId` 变了就不演）。
+  用的是 `#spinner`：`#spin-t` 文案、`#btn-abort` 变「不等了」（`imgSkip`）。`stopSpinner()` 会把两者复原。
+  `goTo()` 顺手 `preload(后两句, {wait:0})`。
+- **诊断** `ImgNet.diagnose(samples)`：`fetch(cache:'no-store', mode:'cors')`（catbox 和 wsrv 都给 CORS），跨域读不了就退回 `<img>` 试；
+  HTTP 有状态码（比如 404）= 连上了、是图没了，不算网络问题。样图优先取资源包里的场景图（立绘死链多，拿死链测会误判）。
+  file:// 打开时本站那项跳过。
+- **顺带修的**：`present()` 的 instant 分支（回看 / 跳转 / 读档）以前不调 `refreshDlgHeight()`，高度停在上一句。
+- 测试：`tools/e2e-imgnet.mjs`（30），`tools/unit/test-imgnet.mjs`（41），冒烟 [7g]。
+  改 `imgnet.js` 后 `tools/smoke-test.js` 的 `FILES` 里已经加了它；新增 core 文件记得也往那里加。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

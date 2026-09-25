@@ -32,14 +32,14 @@
 })();
 </script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.23">
+<link rel="stylesheet" href="app/style.css?v=5.24">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.23">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.24">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.23">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.23">
+<link rel="stylesheet" href="app/phone.css?v=5.24">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.24">
 <!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
-<link rel="stylesheet" href="app/mobile.css?v=5.23">
+<link rel="stylesheet" href="app/mobile.css?v=5.24">
 </head>
 <body>
 
@@ -202,7 +202,7 @@
   </div>
 
   <div id="spinner" hidden>
-    <span class="sp"></span>生成中<span class="el" id="elapsed"></span>
+    <span class="sp"></span><span id="spin-t">生成中</span><span class="el" id="elapsed"></span>
     <button id="btn-abort">中断</button>
   </div>
 </div>
@@ -311,7 +311,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.23</span>
+        <span>gal 引擎 · v5.24</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -393,6 +393,11 @@
           <p class="boot-tip">地址填根地址就行，<code>/v1</code> 这些会自动补。
             401/403 是密钥问题，404 多半是地址少了或多了 <code>/v1</code>，
             控制台报 CORS 说明这个端点不让浏览器直连，得走中转。</p>
+          <!-- 立绘 / 背景加载不出来：图片网络设置 + 测试（app.js netBoxHTML()，手机设置里也有一份） -->
+          <div class="boot-net">
+            <h4>立绘 / 背景加载不出来？</h4>
+            <div id="boot-netbox"></div>
+          </div>
         </div>
 
         <!-- ③ 插画（可选） -->
@@ -441,25 +446,26 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.23"></script>
-<script src="core/cardres.js?v=5.23"></script>
-<script src="core/tokens.js?v=5.23"></script>
-<script src="core/vector.js?v=5.23"></script>
-<script src="core/imagegen.js?v=5.23"></script>
-<script src="core/snapshot.js?v=5.23"></script>
-<script src="core/gallery.js?v=5.23"></script>
-<script src="core/cg.js?v=5.23"></script>
-<script src="core/resolver.js?v=5.23"></script>
-<script src="core/worldbook.js?v=5.23"></script>
-<script src="core/regex.js?v=5.23"></script>
-<script src="core/prompt.js?v=5.23"></script>
-<script src="core/script.js?v=5.23"></script>
-<script src="core/phone.js?v=5.23"></script>
-<script src="core/engine.js?v=5.23"></script>
-<script src="core/api.js?v=5.23"></script>
-<script src="core/savetree.js?v=5.23"></script>
-<script src="core/storage.js?v=5.23"></script>
-<script src="core/editors.js?v=5.23"></script>
-<script src="app/app.js?v=5.23"></script>
+<script src="core/crash.js?v=5.24"></script>
+<script src="core/cardres.js?v=5.24"></script>
+<script src="core/tokens.js?v=5.24"></script>
+<script src="core/vector.js?v=5.24"></script>
+<script src="core/imagegen.js?v=5.24"></script>
+<script src="core/snapshot.js?v=5.24"></script>
+<script src="core/gallery.js?v=5.24"></script>
+<script src="core/cg.js?v=5.24"></script>
+<script src="core/resolver.js?v=5.24"></script>
+<script src="core/worldbook.js?v=5.24"></script>
+<script src="core/regex.js?v=5.24"></script>
+<script src="core/prompt.js?v=5.24"></script>
+<script src="core/script.js?v=5.24"></script>
+<script src="core/phone.js?v=5.24"></script>
+<script src="core/engine.js?v=5.24"></script>
+<script src="core/api.js?v=5.24"></script>
+<script src="core/savetree.js?v=5.24"></script>
+<script src="core/imgnet.js?v=5.24"></script>
+<script src="core/storage.js?v=5.24"></script>
+<script src="core/editors.js?v=5.24"></script>
+<script src="app/app.js?v=5.24"></script>
 </body>
 </html>

@@ -46,7 +46,7 @@ const FILES = [
   'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
+  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -148,7 +148,7 @@ console.log('\n[5] App 页面');
   ok('页 ' + k, !!q('.ph-layer[data-app="' + k + '"]'));
 });
 run(() => q('.ph-app[data-app="cfg"]').click(), '打开设置');
-ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 9,
+ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 10,
    qa('.kt-nav button[data-sec]').length + ' 个');
 ok('外观滑块搬进来了', !!q('#tune-host input[type=range]'));
 ok('旧侧栏已移除', !d.getElementById('history') && !d.getElementById('saves'));
@@ -1348,6 +1348,28 @@ console.log('\n[7f] 手动横竖屏 + 工具栏收起（v5.23）');
   $('btn-tbhide').click();
   ok('再按展开，红点收掉', !$('toolbar').classList.contains('collapsed') && $('tb-dot').hidden && !$('tb-items').hasAttribute('inert'));
   $('phone-dot').hidden = true;
+}
+
+console.log('\n[7g] 图片网络（v5.24）');
+{
+  const $ = id => d.getElementById(id), src = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('ImgNet 加载了', !!w.ImgNet && typeof w.ImgNet.preload === 'function');
+  ok('开场引导接口页有图片网络设置 + 测试', !!d.querySelector('#boot-netbox .netbox .nb-test'));
+  ok('手机设置里也有一份', d.querySelectorAll('.netbox').length >= 2 && !!d.querySelector('.kt-nav button[data-sec="net"]'));
+  const sel = d.querySelector('#boot-netbox .nb-mode');
+  sel.value = 'relay'; sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+  ok('改设置：存下来，两份界面同步', w.ImgNet.config().mode === 'relay' &&
+     [...d.querySelectorAll('.nb-mode')].every(x => x.value === 'relay'));
+  sel.value = 'custom'; sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+  ok('选自定义但还没填地址：不切，先让填地址', w.ImgNet.config().mode === 'relay' &&
+     !d.querySelector('#boot-netbox .nb-tpl-l').hidden);
+  w.ImgNet.setConfig({ mode: 'auto' });
+  ok('背景先拉到手再换（挂了留着上一张，不黑屏）', /ImgNet\.load\(url\)\.then/.test(src));
+  ok('立绘按账本选直连 / 中转', /ImgNet\.srcFor\(url\)/.test(src));
+  ok('一轮演之前先等图', /await waitImages\(res\.modules\);\s*var startIdx = play/.test(src));
+  ok('开场也先等图', /waitImages\(r\.modules\)\.then/.test(src));
+  ok('等图时「中断」变成「不等了」', /if \(imgSkip\) \{ imgSkip\(\); return; \}/.test(src));
+  ok('翻到一句时后台预拉后两句', /lineImgs\(eng\.log\[qi \+ 1\]\)/.test(src));
 }
 
 console.log('\n[8] 运行期未捕获错误');

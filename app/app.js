@@ -25,23 +25,85 @@
   function stopSpinner() {
     clearInterval(elapsedTimer);
     $('spinner').hidden = true;
+    $('spin-t').textContent = '生成中';
+    $('btn-abort').textContent = '中断';
+  }
+
+  /* ============================================================
+     图片网络（core/imgnet.js）：直连不通自动走中转；一轮演之前先把图拉好
+     ============================================================ */
+  ImgNet.attach(document);
+  ImgNet.on(function (type, host) {
+    if (type === 'hostbad') {
+      toast('图床 ' + host + ' 直连加载不出来，已自动改走图片中转。想查是哪一段不通：' +
+        '手机 → 设置 → 图片网络 → 测试。', 'warn', 9000);
+    } else if (type === 'allbad') {
+      toast('图片一张都加载不出来：' + host + ' 直连和中转都不通，多半是网络 / 代理的问题。' +
+        '手机 → 设置 → 图片网络 → 测试，会告诉你卡在哪。', 'bad', 14000);
+    }
+  });
+  function lineImgs(m) {
+    var out = [];
+    if (!m) return out;
+    if (m.scene && m.scene.url) out.push(m.scene.url);
+    (m.sprites || []).forEach(function (s) { if (s.url) out.push(s.url); });
+    return out;
+  }
+  /**
+   * 一轮剧情演之前：这一轮要用的背景和立绘先拉下来，拉好了再开演（设置里的「每轮最多等几秒」封顶，
+   * 玩家也可以点「不等了」）。没拉完的继续在后台拉，演到那句时多半已经到了。
+   */
+  var imgSkip = null;
+  function waitImages(mods) {
+    var urls = [];
+    (mods || []).forEach(function (m) { urls = urls.concat(lineImgs(m)); });
+    urls = urls.filter(function (u, i) { return ImgNet.isRemote(u) && urls.indexOf(u) === i; });
+    var todo = urls;
+    if (!todo.length || !(ImgNet.config().wait > 0)) {
+      ImgNet.preload(todo, { wait: 0 });
+      return Promise.resolve(null);
+    }
+    clearInterval(elapsedTimer);
+    $('spinner').hidden = false;
+    $('spin-t').textContent = '加载立绘和背景';
+    $('btn-abort').textContent = '不等了';
+    $('elapsed').textContent = ' 0/' + todo.length;
+    var skip = new Promise(function (r) { imgSkip = r; });
+    return ImgNet.preload(todo, {
+      skip: skip,
+      onProgress: function (d, t) { $('elapsed').textContent = ' ' + d + '/' + t; }
+    }).then(function (r) {
+      imgSkip = null;
+      $('spin-t').textContent = '生成中';
+      $('btn-abort').textContent = '中断';
+      return r;
+    });
   }
 
   /* ============================================================
      背景（双缓冲交叉淡入）
      ============================================================ */
   var bgFront = $('bgA'), bgBack = $('bgB'), lastBgUrl = null;
+  /* 背景是 CSS background，挂了没有 error 事件、只会黑屏。所以先用 ImgNet 拉到手
+     （直连不通自动走中转），拉到了再交叉淡入；都拉不到就留着上一张，不黑屏。
+     bgTok：连着翻几句时，只认最后一次。 */
+  var bgTok = 0;
   function paintBG(url, instant) {
     if (!url || url === lastBgUrl) return;
     lastBgUrl = url;
-    bgBack.style.backgroundImage = 'url("' + url + '")';
-    if (instant) {
-      bgBack.style.transition = 'none';
-      requestAnimationFrame(function () { bgBack.style.transition = ''; });
-    }
-    bgBack.classList.add('show');
-    bgFront.classList.remove('show');
-    var t = bgFront; bgFront = bgBack; bgBack = t;
+    var tok = ++bgTok;
+    ImgNet.load(url).then(function (src) {
+      if (tok !== bgTok) return;
+      if (!src) { noteImgFail('背景', url); return; }
+      bgBack.style.backgroundImage = 'url("' + src + '")';
+      if (instant) {
+        bgBack.style.transition = 'none';
+        requestAnimationFrame(function () { bgBack.style.transition = ''; });
+      }
+      bgBack.classList.add('show');
+      bgFront.classList.remove('show');
+      var t = bgFront; bgFront = bgBack; bgBack = t;
+    });
   }
 
   /* ============================================================
@@ -156,6 +218,8 @@
       H.style.removeProperty('--rh');
     }
     H.dataset.devAuto = autoDevice();
+    /* 走中转时按屏幕压图：手机上长边 1600 足够，还省流量 */
+    if (window.ImgNet) ImgNet.setMaxEdge(mob ? 1600 : 2048);
   }
   /** 版式变了（切设备 / 转屏）：把当前这句按新规则重摆一遍 */
   function onLayoutChange() {
@@ -363,7 +427,7 @@
         if (!triedFallback && fallbackUrl && fallbackUrl !== url) {
           triedFallback = true;
           lay.style.visibility = 'hidden';
-          img.src = fallbackUrl;          // onload/onerror 还挂着，会再走一轮
+          img.src = ImgNet.srcFor(fallbackUrl);   // onload/onerror 还挂着，会再走一轮
           return;
         }
         /* 原皮也挂了：藏掉这一层，剧情照常推进 */
@@ -371,12 +435,15 @@
         lay.style.visibility = 'hidden';
         reveal();
       }
-      if (img.getAttribute('src') === url && img.complete && img.naturalWidth > 0) {
+      /* 直连不通的图床直接用中转地址（ImgNet 记着账）；中途再挂，页面级的 error 拦截会先换中转，
+         中转也挂了才轮到这里的 failed() */
+      var src0 = ImgNet.srcFor(url);
+      if (img.getAttribute('src') === src0 && img.complete && img.naturalWidth > 0) {
         return ready();
       }
       img.onload = ready;
       img.onerror = failed;
-      img.src = url;
+      img.src = src0;
       /* 缓存命中时 onload 不会再触发，得自己判一次。
          complete 为 true 但 naturalWidth 为 0 = 加载失败。 */
       if (img.complete) { img.naturalWidth > 0 ? ready() : failed(); }
@@ -478,6 +545,8 @@
           clearInterval(typer); typing = false;
           pending = m.text; textEl.textContent = m.text;
           updateNav();
+          /* 以前漏了这句：往回翻到一句长的，对话框还是上一句的高度，字被截在框里 */
+          refreshDlgHeight();
         } else {
           typeOut(m.text, token);
         }
@@ -526,6 +595,8 @@
     qi = i;
     present(eng.log[qi], opts);
     updateNav();
+    /* 后面两句的图先在后台拉着，翻过去就不用等 */
+    ImgNet.preload(lineImgs(eng.log[qi + 1]).concat(lineImgs(eng.log[qi + 2])), { wait: 0 });
     var t = eng.log[qi] && eng.log[qi].turn;
     if (t != null && !openTurns[t]) { openTurns[t] = true; renderHistory(); }
     else markHistory();
@@ -1285,6 +1356,7 @@
       renderBootArt();
     };
     renderBoot();
+    if ($('boot-netbox')) { $('boot-netbox').innerHTML = netBoxHTML(); renderNetBoxes(); }
   }
 
   /** 演完一轮：把新句子并进日志，跳到这批的第一句 */
@@ -1397,6 +1469,7 @@
       lastResult = res;
       lastRaw = res.raw || res.text;
       warnAfterTurn(res);
+      await waitImages(res.modules);
       var startIdx = play(res.modules);
       recordVariant(snap, res);
       await checkpoint(snap);
@@ -1797,6 +1870,127 @@
   ];
 
   /* 「设置」里的分区。合成一个工作台，左侧导航切换。 */
+  /* ============================================================
+     「图片网络」设置 + 测试（开场引导的接口页、手机设置里各一份，同一套）
+     ============================================================ */
+  function netBoxHTML() {
+    return '<div class="netbox">' +
+      '<label>图片怎么加载<select class="nb-mode">' +
+      '<option value="auto">自动：先直连，连不上自动走中转（推荐）</option>' +
+      '<option value="relay">总走中转：代拉并压缩，省流量，手机上更快</option>' +
+      '<option value="direct">只直连（不走中转）</option>' +
+      '<option value="custom">自定义中转地址</option></select></label>' +
+      '<label class="nb-tpl-l" hidden>中转地址（{url} 会换成图片地址）' +
+      '<input type="text" class="nb-tpl" placeholder="https://你的图片代理/?url={url}"></label>' +
+      '<label>每轮开演前最多等图<select class="nb-wait">' +
+      '<option value="0">不等（边演边加载）</option><option value="6">6 秒</option>' +
+      '<option value="12">12 秒</option><option value="20">20 秒</option>' +
+      '<option value="30">30 秒</option></select></label>' +
+      '<div class="nb-row"><button type="button" class="kt-btn nb-test">测试图片网络</button>' +
+      '<span class="nb-stat"></span></div>' +
+      '<div class="nb-out"></div>' +
+      '<p class="nb-tip">立绘和背景都挂在第三方图床上（files.catbox.moe、huggingface.co），国内要走代理。' +
+      '图裂了先点「测试」：它会分别测本站、图床直连、图床经中转，告诉你卡在哪一段。' +
+      '中转默认用 wsrv.nl（开源的图片代理，顺手把图压小，4096 的背景 670KB → 110KB）。</p>' +
+      '</div>';
+  }
+  function renderNetBoxes() {
+    var c = ImgNet.config(), st = ImgNet.stats();
+    var bad = Object.keys(st).filter(function (h) { return st[h].bad; });
+    PA2('.netbox').forEach(function (box) {
+      box.querySelector('.nb-mode').value = c.mode;
+      box.querySelector('.nb-wait').value = String(c.wait);
+      if (box.querySelector('.nb-wait').value !== String(c.wait)) box.querySelector('.nb-wait').value = '12';
+      box.querySelector('.nb-tpl').value = c.tpl;
+      box.querySelector('.nb-tpl-l').hidden = c.mode !== 'custom';
+      box.querySelector('.nb-stat').textContent = !bad.length || c.mode !== 'auto' ? '' :
+        '当前：' + bad.map(function (h) {
+          return h + (st[h].rok ? ' 直连不通，正在走中转' : ' 直连不通，中转也还没拉到图');
+        }).join('；');
+    });
+  }
+  /** 测试用的样图：每个图床挑一张（优先卡里的场景图 —— 立绘里死链多，拿死链测会误判） */
+  function netSamples() {
+    var out = [];
+    function add(u) { u = ImgNet.originOf(u); if (ImgNet.isRemote(u) && out.indexOf(u) < 0) out.push(u); }
+    var R0 = window.RESOURCE || {};
+    [R0.scenes, R0.defaults].forEach(function (obj) {
+      if (!obj) return;
+      Object.keys(obj).slice(0, 30).forEach(function (k) {
+        JSON.stringify(obj[k]).replace(/https?:\/\/[^"\\]+/g, function (u) { add(u); return u; });
+      });
+    });
+    lineImgs(eng.log && eng.log[qi]).forEach(add);
+    return out;
+  }
+  function fmtRes(r) {
+    if (!r) return '<span class="dim">（没测）</span>';
+    if (r.local) return '<span class="dim">本地打开的，不用测</span>';
+    var t = (r.ms / 1000).toFixed(1) + 's';
+    if (r.ok) return '<span class="ok">✓ 通</span> ' + t + (r.bytes ? ' · ' + Math.round(r.bytes / 1024) + 'KB' : '');
+    if (r.status) return '<span class="warn">✗ HTTP ' + r.status + '</span>（连上了，是这张图本身没了）';
+    return '<span class="bad">✗ ' + (r.err === 'timeout' ? '超时' : '连不上') + '</span> ' + t;
+  }
+  function netVerdict(d) {
+    var tips = '让代理管到图床：规则模式里加上这几个域名，或者直接开全局；' +
+      '手机代理有「分应用代理」的，看看勾没勾你用的浏览器；' +
+      '关掉手机的「私人 DNS」和浏览器的「安全 DNS」，代理里有 IPv6 选项的先关掉（这两样最常绕过代理）。';
+    if (!d.site.ok) return '<b class="bad">连本站都时断时续</b>：网络本身不稳，先换个网络 / 节点再试。';
+    if (!d.hosts.length) return '这张卡没有外链图片，不用测。';
+    var lines = d.hosts.map(function (h) {
+      var dOk = h.direct.ok || h.direct.status, rOk = h.relay && (h.relay.ok || h.relay.status);
+      if (dOk) return '<b class="ok">' + h.host + ' 直连正常</b>' +
+        (h.relay && h.relay.ok && h.relay.ms < h.direct.ms * 0.6 ? '（不过中转更快，手机上可以选「总走中转」）' : '') + '。';
+      if (rOk) return '<b class="warn">' + h.host + ' 你这边直连不通，走中转能通</b>：' +
+        (d.mode === 'direct' ? '现在设成了「只直连」，改成「自动」图就能出来。'
+                             : '已经自动改走中转，图能正常出，不用管。') +
+        '想直连的话：' + tips;
+      return '<b class="bad">' + h.host + ' 直连和中转都不通</b>：这是网络 / 代理的问题，页面这边补不了。' + tips +
+        '也可以在上面选「自定义中转地址」，填一个你能连上的图片代理。';
+    });
+    return lines.join('<br>');
+  }
+  document.addEventListener('change', function (e) {
+    var box = e.target.closest ? e.target.closest('.netbox') : null;
+    if (!box) return;
+    var patch = {};
+    if (e.target.classList.contains('nb-mode')) patch.mode = e.target.value;
+    if (e.target.classList.contains('nb-wait')) patch.wait = Number(e.target.value);
+    if (e.target.classList.contains('nb-tpl')) patch.tpl = e.target.value;
+    if (patch.mode === 'custom' && !/\{(url|raw|path)\}/.test(box.querySelector('.nb-tpl').value)) {
+      box.querySelector('.nb-tpl-l').hidden = false;
+      box.querySelector('.nb-tpl').focus();
+      box.querySelector('.nb-stat').textContent = '先填中转地址（要带 {url}），填好再选一次';
+      e.target.value = ImgNet.config().mode;
+      return;
+    }
+    ImgNet.setConfig(patch);
+    renderNetBoxes();
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.nb-test') : null;
+    if (!b) return;
+    var box = b.closest('.netbox'), out = box.querySelector('.nb-out');
+    var samples = netSamples();
+    b.disabled = true;
+    out.innerHTML = '<span class="dim">测试中…（最多二十来秒）</span>';
+    ImgNet.diagnose(samples).then(function (d) {
+      b.disabled = false;
+      var rows = [['本站（页面本身）', d.site]];
+      d.hosts.forEach(function (h) {
+        rows.push([h.host + ' 直连', h.direct]);
+        rows.push([h.host + ' 经' + d.relayName + '中转', h.relay]);
+      });
+      out.innerHTML = '<table>' + rows.map(function (r) {
+        return '<tr><th>' + esc(r[0]) + '</th><td>' + fmtRes(r[1]) + '</td></tr>';
+      }).join('') + '</table><p class="nb-verdict">' + netVerdict(d) + '</p>';
+      renderNetBoxes();
+    }).catch(function (err) {
+      b.disabled = false;
+      out.textContent = '测试出错：' + (err && err.message || err);
+    });
+  });
+
   var SECTIONS = [
     { k:'me',    t:'我的人设', d:'称呼与自我描述' },
     { k:'book',  t:'世界书',   d:'设定条目与触发' },
@@ -1805,6 +1999,7 @@
     { k:'save',  t:'存读档',   d:'进度存取' },
     { k:'tune',  t:'外观',     d:'立绘与对话框' },
     { k:'img',   t:'文生图',   d:'NovelAI 出图与 CG' },
+    { k:'net',   t:'图片网络', d:'图裂了看这里' },
     { k:'debug', t:'调试',     d:'请求与兜底告警' },
     { k:'api',   t:'接口',     d:'API 地址与模型' }
   ];
@@ -1856,7 +2051,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.20</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.24</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -1990,6 +2185,8 @@
       '<p class="kt-hint" id="ig-gal"></p>' +
       '<button class="kt-btn" id="ig-clear">清 空 相 册</button></div></div>',
 
+    net:
+      '<div class="kt-pane-bd pad"><div class="kt-sec"><h4>图 片 网 络</h4>' + netBoxHTML() + '</div></div>',
     debug:
       '<div class="kt-pane-bd pad">' +
       '<div class="kt-acts" style="margin-bottom:14px" id="debug-tabs">' +
@@ -2161,7 +2358,7 @@
   }
 
   var SEC_ICON = { me:'🪪', book:'📚', pre:'🧩', vars:'📊',
-                   save:'💾', tune:'🎚', img:'🎨', debug:'🔧', api:'⚙' };
+                   save:'💾', tune:'🎚', img:'🎨', net:'🖼', debug:'🔧', api:'⚙' };
 
   function openSection(k) {
     curSec = k;
@@ -2198,6 +2395,7 @@
     else if (k === 'vars') renderVars();
     else if (k === 'save') { /* 入口按钮在面板里，见 open-saves */ }
     else if (k === 'debug') renderDebug();
+    else if (k === 'net') renderNetBoxes();
     else if (k === 'api') renderApiInfo();
   }
 
@@ -4471,15 +4669,22 @@
       eng.history.push({ role: 'assistant', content: pick.t });
       var r = eng.processOutput(pick.t);
       lastResult = r; lastRaw = pick.t;
-      play(r.modules);
-      /* 开场本身也是一个节点（树根）：以后想换个方向从头来，读它就行 */
-      if (treeOn()) {
-        var rootNode = SaveTree.newId('n');
-        GalStore.saveSlot('node:' + rootNode,
-          snapshot({ type: 'auto', nodeId: rootNode, parent: '', name: '开场' })).catch(function () {});
-        activeNode = rootNode;
-      }
-      autosave({ skipNode: true });
+      speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
+      textEl.textContent = '正在加载立绘和背景…';
+      var myRun = runId;
+      waitImages(r.modules).then(function () {
+        stopSpinner();
+        if (runId !== myRun) return;           // 等图的时候玩家已经退出 / 换了一局
+        play(r.modules);
+        /* 开场本身也是一个节点（树根）：以后想换个方向从头来，读它就行 */
+        if (treeOn()) {
+          var rootNode = SaveTree.newId('n');
+          GalStore.saveSlot('node:' + rootNode,
+            snapshot({ type: 'auto', nodeId: rootNode, parent: '', name: '开场' })).catch(function () {});
+          activeNode = rootNode;
+        }
+        autosave({ skipNode: true });
+      });
     } else {
       speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
       textEl.textContent = '输入一句话开始。';
@@ -4509,6 +4714,7 @@
      ============================================================ */
   $('btn-abort').onclick = function (e) {
     e.stopPropagation();
+    if (imgSkip) { imgSkip(); return; }        // 在等图：不等了，先演
     if (abortCtl) abortCtl.abort();
   };
   $('dialogue').onclick = advance;
