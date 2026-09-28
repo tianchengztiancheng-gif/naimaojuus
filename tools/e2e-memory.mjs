@@ -51,7 +51,9 @@ async function page(o = {}) {
     const body = route.request().postData() || '';
     log[which].push(body);
     let content;
-    if (/剧情记忆整理/.test(body)) content = '- 第1天 朝 港区\n- 测试娘A答应周末和指挥官去海边（暗号：蓝鲸）';
+    if (/剧情记忆整理/.test(body) && o.thinkOnly === 'always') content = '';
+    else if (/剧情记忆整理/.test(body) && o.thinkOnly && !/你是港区的叙事者/.test(body)) content = '<think>只在想，额度用完了</think>';
+    else if (/剧情记忆整理/.test(body)) content = '- 第1天 朝 港区\n- 测试娘A答应周末和指挥官去海边（暗号：蓝鲸）';
     else if (/剧情记忆压缩/.test(body)) content = '- 前情：测试娘A答应去海边';
     else { n++; content = `<Gal>\n「这是第${n}次回答，指挥官。」|测试娘A|微笑|\n</Gal>`; }
     await route.fulfill({ status: 200, contentType: 'application/json',
@@ -144,6 +146,43 @@ console.log('\n[B 撤回到记忆覆盖范围里 / 整理走副 API]');
   ok('撤回三轮：记忆回到那一轮之前的样子（那块作废）', before === 1 && after.v === 0 && after.n === 0, JSON.stringify({ before, after }));
   const dr = await p.evaluate(() => window.__gal.eng.dryRun('x').messages.map(m => m.content).join('\n'));
   ok('作废的记忆不再发', !/蓝鲸/.test(dr) && /第1句/.test(dr));
+  ok('没有报错', errs.length === 0, errs.join(' | '));
+  await ctx.close();
+}
+
+console.log('\n[B2 直接问回来是空的（推理模型 / 被拦）→ 带着预设再问]');
+{
+  const { ctx, p, log, errs } = await page({ thinkOnly: true });
+  await start(p);
+  for (let i = 1; i <= 4; i++) await say(p, `第${i}句`);
+  await p.waitForFunction(() => window.__gal.eng.memory.chunks.length > 0, null, { timeout: 8000 }).catch(() => {});
+  const sums = log.main.filter(x => /剧情记忆整理/.test(x));
+  ok('整理请求不再限 900 token（用接口设置的最大输出）', sums.length && sums.every(x => JSON.parse(x).max_tokens === 8192), sums.map(x => JSON.parse(x).max_tokens).join());
+  ok('第一次只回了思考 → 第二次带着预设问，整理成功', sums.length === 2 && /你是港区的叙事者/.test(sums[1]) && (await mem(p)).chunks.length === 1);
+  ok('没有弹失败提示', !(await p.evaluate(() => document.body.textContent.includes('记忆整理失败'))));
+  ok('没有报错', errs.length === 0, errs.join(' | '));
+  await ctx.close();
+}
+
+console.log('\n[B3 两次都空 → 只弹一次提示，设置里写着原因和办法]');
+{
+  const { ctx, p, log, errs } = await page({ thinkOnly: 'always' });
+  await start(p);
+  let toasts = 0;
+  await p.exposeFunction('__seenToast', () => { toasts++; });
+  await p.evaluate(() => { const seen = new WeakSet(); new MutationObserver(() => {
+    document.querySelectorAll('#gal-toast > *, .toast').forEach(n => {
+      if (!seen.has(n) && n.textContent.includes('记忆整理失败')) { seen.add(n); window.__seenToast(); } });
+  }).observe(document.body, { childList: true, subtree: true, characterData: true }); });
+  for (let i = 1; i <= 6; i++) await say(p, `第${i}句`);
+  await p.waitForTimeout(800);
+  ok('整理失败了好几轮：只弹了一次', toasts === 1 && log.main.filter(x => /剧情记忆整理/.test(x)).length >= 4, toasts + ' 次');
+  await p.click('#btn-phone'); await p.waitForTimeout(400);
+  await p.evaluate(() => document.querySelector('#jup-root .ph-app[data-app="cfg"]').click()); await p.waitForTimeout(300);
+  await p.evaluate(() => document.querySelector('#jup-root .kt-nav button[data-sec="mem"]').click()); await p.waitForTimeout(300);
+  const t = await p.textContent('#mem-host');
+  ok('设置 · 记忆 里写着失败原因和办法', /上次整理失败/.test(t) && /直接问/.test(t) && /带预设问/.test(t) && /最大输出/.test(t), t.slice(0, 200));
+  await p.screenshot({ path: `${OUT}/memory-err.png` });
   ok('没有报错', errs.length === 0, errs.join(' | '));
   await ctx.close();
 }

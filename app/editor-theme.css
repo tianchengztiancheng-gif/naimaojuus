@@ -395,3 +395,4 @@
 #jup-root .mem-c textarea{width:100%;box-sizing:border-box;font-size:13px;line-height:1.6;resize:vertical}
 @media (max-width:560px){ #jup-root .mem-grid{grid-template-columns:1fr} }
 #jup-root #mem-host .kt-acts{margin-bottom:18px}
+#jup-root .mem-err{color:#ffb1a1;border-left:3px solid rgba(255,140,120,.6);padding-left:10px;margin:4px 0 10px}

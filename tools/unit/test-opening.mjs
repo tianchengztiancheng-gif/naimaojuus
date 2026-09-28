@@ -93,7 +93,7 @@ console.log('\n[4] 小手机单独环境');
   ok('提示词：带手机输出规则', /手机内容输出规则/.test(pr));
   let got = null;
   const r = await eng.phoneEnvTick({ send: async (msgs, o) => { got = { msgs, o }; return '[短信|甲|文字|在吗]\n[群聊|闲聊|乙|文字|哼]'; } });
-  ok('跑一次：用传进来的通道，2 条', r.count === 2 && got && /港区手机环境/.test(got.msgs[0].content) && got.o.maxTokens === 1200);
+  ok('跑一次：用传进来的通道，2 条，不另设输出上限（推理模型的思考也占额度）', r.count === 2 && got && /港区手机环境/.test(got.msgs[0].content) && got.o.maxTokens === undefined);
   const last = eng.history[eng.history.length - 1];
   ok('结果进历史，标成 phoneOnly / phoneEnv', last.phoneOnly && last.phoneEnv && /在吗/.test(last.content));
   ok('正文干跑不把它当对话发回去', eng.dryRun('下一句').messages.every(m => !/\[短信\|甲\|文字\|在吗\]/.test(m.content)));

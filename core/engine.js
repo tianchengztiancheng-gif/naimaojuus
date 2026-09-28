@@ -274,7 +274,7 @@
   Engine.prototype.phoneEnvTick = async function (opt) {
     opt = opt || {};
     var raw = await this.quiet(this.phoneEnvPrompt(opt), {
-      send: opt.send, maxTokens: opt.maxTokens || 1200, temperature: opt.temperature
+      send: opt.send, maxTokens: opt.maxTokens == null ? 0 : opt.maxTokens, temperature: opt.temperature
     });
     raw = String(raw || '');
     var n = (raw.match(/\[(短信|群聊|小红书|评论|趋势)\|/g) || []).length;
@@ -301,9 +301,8 @@
     while (added < max) {
       var r = opt.now ? M.planNow(this.memory, main, this.memCfg) : M.plan(this.memory, main, this.memCfg);
       if (!r) break;
-      var raw = await this.quiet(M.summaryPrompt(this.memory, main, r, po), { send: opt.send, maxTokens: 900, temperature: 0.3 });
+      var raw = await this.memAsk(M.summaryPrompt(this.memory, main, r, po), opt);
       var c = M.makeChunk(main, r, raw);
-      if (!c.text) throw new Error('总结回来是空的');
       /* 请求期间玩家撤回 / 读档了：这一块对不上了就不要 */
       var now = M.mainHist(this.history);
       if (now.length < r.to || M.sig(now[r.to - 1]) !== c.sig || M.covered(this.memory, now) !== r.from) break;
@@ -313,10 +312,55 @@
     var mp = M.mergePlan(this.memory, this.memCfg);
     if (mp) {
       var pick = this.memory.chunks.slice(0, mp.n);
-      var mraw = await this.quiet(M.mergePrompt(pick, po), { send: opt.send, maxTokens: 1200, temperature: 0.3 });
-      if (M.cleanOut(mraw) && this.memory.chunks[0] === pick[0]) { M.applyMerge(this.memory, mp.n, mraw); merged = mp.n; }
+      var mraw = await this.memAsk(M.mergePrompt(pick, po), opt);
+      if (this.memory.chunks[0] === pick[0]) { M.applyMerge(this.memory, mp.n, mraw); merged = mp.n; }
     }
     return { added: added, merged: merged };
+  };
+
+  /**
+   * 记忆整理的一次提问。先「直接问」（一条 user 消息，省 token）；
+   * 回来是空的（被过滤、被拒、只吐了思考）而且载了预设，就「带着预设再问一次」——
+   * 预设里的破限 / 系统提示词和正文一样发，只是不带对话历史，最后一条换成整理指令。
+   * 两次都空：抛错，错误里说清楚上游给的结束原因。
+   */
+  Engine.prototype.memAsk = async function (prompt, opt) {
+    opt = opt || {};
+    var M = global.Memory, A = global.GalAPI;
+    var why = [], out = '';
+    var q = { send: opt.send, maxTokens: 0, temperature: 0.3 };
+    function reason(e) {
+      var f = A && A.lastFinish;
+      if (e) return String(e.message || e).split('\n')[0];
+      if (f && f.info) return f.info.kind === 'length' ? '输出额度全用在思考上了（' + f.reason + '）' : f.info.text;
+      return '模型只回了空白或只有思考过程' + (f && f.reason ? '（' + f.reason + '）' : '');
+    }
+    try { out = M.cleanOut(await this.quiet(prompt, q)); if (!out) why.push('直接问：' + reason()); }
+    catch (e) { if (!/上游没有返回内容|内容过滤/.test(String(e.message || e))) throw e; why.push('直接问：' + reason(e)); }
+    if (!out && this.preset && opt.presetFallback !== false) {
+      try { out = M.cleanOut(await this.quiet(prompt, Object.assign({ messages: this.presetQuietMessages(prompt) }, q)));
+        if (!out) why.push('带预设问：' + reason()); }
+      catch (e) { if (!/上游没有返回内容|内容过滤/.test(String(e.message || e))) throw e; why.push('带预设问：' + reason(e)); }
+    }
+    if (!out) {
+      var err = new Error('总结回来是空的 —— ' + why.join('；'));
+      err.memEmpty = true;
+      throw err;
+    }
+    return out;
+  };
+
+  /** 带着预设（破限 / 系统提示词 / 角色卡描述）问一句独立的话：不带对话历史、不带世界书，最后一条是 prompt */
+  Engine.prototype.presetQuietMessages = function (prompt) {
+    var wb = global.Worldbook.activate([], [], {});
+    var built = global.PromptBuilder.build({
+      preset: this.preset, card: this.card, history: [], userText: prompt, worldbook: wb,
+      charName: this.card && (this.card.data || this.card).name,
+      userName: this.cfg.userName || '指挥官', personaDescription: '',
+      macroVars: JSON.parse(JSON.stringify(this.macroVars || {})),     // 预设里的 setvar 别改到正文的变量
+      model: this.cfg.model || ''
+    });
+    return built.messages;
   };
 
   /** 只组装不发送——干跑，用来检视会发出去什么 */
@@ -559,8 +603,11 @@
     opt = opt || {};
     var send = opt.send || this.cfg.quietSend;
     if (!send) throw new Error('未配置独立生成通道');
-    var out = await send([{ role: 'user', content: prompt }], {
-      maxTokens: opt.maxTokens || 600,
+    /* maxTokens: 0 = 不另设上限，用接口设置里的「最大输出」。
+       推理模型（Gemini 2.5、DeepSeek R1、开了思考的 Claude…）的思考也算在输出额度里，
+       额度给小了会全花在思考上，正文一个字都没有（v5.26.1 记忆整理「总结回来是空的」就是这个） */
+    var out = await send(opt.messages || [{ role: 'user', content: prompt }], {
+      maxTokens: opt.maxTokens === 0 ? undefined : (opt.maxTokens || 600),
       temperature: opt.temperature
     });
     /* 推理模型在独立通道里也可能先吐 <think>，手机消息里不该出现 */

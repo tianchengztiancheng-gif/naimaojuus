@@ -1135,7 +1135,7 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - 测试：`tools/e2e-opening.mjs`（40，假接口 main.api / sub.api，带一个最小预设 —— 没预设的话 prompt 里没有 chatHistory，拿不到开场指令），
   `tools/unit/test-opening.mjs`（36），冒烟 [7h]；`smoke-test.js` 的 `FILES` 已加 `core/opening.js`。
 
-## 七·十八、长期记忆 / 删导入的正则（v5.26）
+## 七·十八、长期记忆 / 删导入的正则（v5.26 / v5.26.1）
 
 - **为什么**：以前 `dryRun()` 只发 `history.slice(-historyLimit)`（40 条 = 20 轮），更早的直接丢；玩家反馈三十轮左右开始忘事、变糊。
 - **core/memory.js**（纯逻辑）：`eng.memory = {chunks:[{from,to,sig,fromTurn,toTurn,text,merged?,at}], notes}`。
@@ -1158,7 +1158,12 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - **删导入的正则**：`deleteUserRegex(names|null)` 改 `gal_user_regex`，顺带清 `gal_regex_off` 里 `user:名字` 的开关，再 `loadUserRegex()`。
   入口：`noteAssets()` 里的 `#rx-clear`、正则列表的 `[data-rxdel]`、详情页 `#rx-del-one`。
   `renderPreset()` 开头加了 `if (!$('pre-list')) return;` —— 以前在开场引导里导入正则会因为手机还没建而报错。
-- 测试：`tools/e2e-memory.mjs`（23），`tools/unit/test-memory.mjs`（34），冒烟 [7i]；设置分区数 10 → 11（冒烟 `侧栏分区`）。
+- **v5.26.1「总结回来是空的」**：整理原先 `quiet(..., {maxTokens: 900})`，推理模型的思考算输出额度 → 全花在思考上、正文为空。
+  现在 `quiet()` 支持 `maxTokens: 0` = 不传上限（用接口配置的 maxTokens），整理 / 合并 / 手机环境都用 0。
+  整理走 `Engine.memAsk()`：直接问（单条 user）→ 空或被过滤（错误文案含「上游没有返回内容 / 内容过滤」）且有预设 →
+  `presetQuietMessages()`（`PromptBuilder.build` 带预设 + 卡，无历史、空世界书、macroVars 拷一份）再问一次；两次都空抛 `memEmpty` 错误，
+  原因取 `GalAPI.lastFinish`。其它错误（401、网络）不重问直接抛。app 里 `memErr / memErrToasted`：连续失败只弹一次，设置 · 记忆显示原因和办法。
+- 测试：`tools/e2e-memory.mjs`（30），`tools/unit/test-memory.mjs`（40），冒烟 [7i]；设置分区数 10 → 11（冒烟 `侧栏分区`）。
 
 ## 八、当前数据一览
 

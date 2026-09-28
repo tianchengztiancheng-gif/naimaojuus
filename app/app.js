@@ -2061,7 +2061,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.26</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.26.1</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -4756,7 +4756,7 @@
     var q = memCfg().via === 'sub' ? GalAPI.quietConfig() : null;
     return GalAPI.chatWithRetry(msgs, { params: params, retries: 1, config: q || undefined });
   }
-  var memBusy = false;
+  var memBusy = false, memErr = '', memErrToasted = false;
   /** @param {boolean} [now] 「现在整理」：不够一块也整理 */
   function memoryAfterTurn(now) {
     if (!now && !memCfg().enabled) return Promise.resolve(null);
@@ -4767,6 +4767,7 @@
     return eng.memoryTick({ send: memSend, now: !!now, userName: Editors.loadPersona().name || '指挥官' })
       .then(function (r) {
         if (runId !== myRun) return r;
+        memErr = ''; memErrToasted = false;
         if (r.added || r.merged) {
           autosave({ skipNode: true });
           console.info('[记忆] 新整理 ' + r.added + ' 块' + (r.merged ? '，合并了 ' + r.merged + ' 块' : ''));
@@ -4774,7 +4775,14 @@
         if (curSec === 'mem') renderMem();
         return r;
       }).catch(function (e) {
-        toast('记忆整理失败：' + String(e.message || e).split('\n')[0] + '（正文不受影响，下一轮再试）', 'warn', 7000);
+        memErr = String(e.message || e).split('\n')[0];
+        console.warn('[记忆] 整理失败', e);
+        /* 连着失败别每轮都弹：第一次弹，之后只在 设置 · 记忆 里显示；手动点「现在整理」照弹 */
+        if (now || !memErrToasted) {
+          toast('记忆整理失败：' + memErr + '。正文不受影响，下一轮会再试；详情和办法在 手机 → 设置 → 记忆。', 'warn', 9000);
+          memErrToasted = true;
+        }
+        if (curSec === 'mem') renderMem();
       }).then(function (r) { memBusy = false; return r; });
   }
 
@@ -4808,6 +4816,10 @@
       '</div>' +
       '<div class="kt-hint" id="mem-stat">现在第 ' + turns + ' 轮 · 已整理到第 ' + covT + ' 轮 · 记忆 ' + cs.length + ' 块 ' + chars + ' 字' +
         (c.via === 'sub' && !GalAPI.subReady() ? ' · <span class="warn">副 API 没填全，先用主 API</span>' : '') + '</div>' +
+      (memErr ? '<div class="kt-hint mem-err"><b>上次整理失败：</b>' + esc(memErr) + '<br>' +
+        '常见原因和办法：① 推理 / 思考型模型把输出额度全用在思考上 → 到接口设置把「最大输出」调到 8192 以上；' +
+        '② 中转或上游的内容审核把剧情原文拦了、或模型拒绝 → 已经自动带着预设（破限）再试过一次，还不行就把「整理用哪个接口」换成副 API，填一个审核松的模型；' +
+        '③ 副 API 的「最大输出」太小（默认 1500）→ 调大。</div>' : '') +
       '<div class="kt-acts"><button class="kt-btn" id="mem-now">现在整理</button>' +
         '<button class="kt-btn" id="mem-clear"' + (cs.length ? '' : ' disabled') + '>清空记忆</button></div></div>' +
       '<div class="kt-sec"><h4>备 忘 · 永 远 记 住</h4>' +
