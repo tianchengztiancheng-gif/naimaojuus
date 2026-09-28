@@ -633,9 +633,7 @@
   /* 出图用的独立通道，和手机私聊走同一条 —— 不写主线历史、不占回合 */
   function cgQuiet(prompt, o) {
     return eng.quiet(prompt, Object.assign({
-      send: function (msgs, params) {
-        return GalAPI.chatWithRetry(msgs, { params: params, retries: 1 });
-      }
+      send: phoneSend
     }, o || {}));
   }
 
@@ -1314,6 +1312,15 @@
       { ok: !!g.enabled, must: false, t: g.enabled
           ? '文生图已开 · 每轮 ' + g.perTurn + ' 张' : '文生图没开（可以之后再开）' }
     ];
+    if (typeof OPC !== 'undefined' && OPC && OPC.mode === 'custom') {
+      var sp = OPC.spec || {};
+      rows.push({ ok: !!(sp.cast && sp.cast.length), must: false, t: '自定义开场 · ' + (sp.loc || '未选地点') + ' · ' +
+        ((sp.cast || []).length ? (sp.cast || []).map(function (c) { return c.name; }).join('、') : '还没选出场舰娘') +
+        (sp.aiOpening === false ? ' · 我先说话' : ' · AI 写开场') });
+    }
+    var pe = typeof peCfg === 'function' ? peCfg() : null;
+    if (pe && pe.independent) rows.push({ ok: true, must: false, t: '小手机单独环境 · ' +
+      (GalAPI.subReady() ? '副 API ' + (GalAPI.loadSubConfig().model || '') : '和正文共用主 API') });
     box.innerHTML = rows.map(function (r) {
       var cls = r.ok ? 'ok' : (r.must ? 'bad' : '');
       return '<div class="r ' + cls + '"><i>' + (r.ok ? '✓' : (r.must ? '!' : '·')) +
@@ -1478,6 +1485,7 @@
         '或者用 ‹ › 翻回之前的版本。', 'ok', 6000);
       /* 出图另起一条线，不 await —— 剧情已经能推了，图慢慢来 */
       if (startIdx != null) kickCG(res, startIdx);
+      phoneEnvAfterTurn();
       autoRegisterScenes(res.misses);
     } catch (e) {
       /* 重roll 失败：已经撤掉的那一版原样放回去，别让玩家两头落空 */
@@ -1786,9 +1794,7 @@
             ((eng.vars && eng.vars.人物) || {})[name], userText, ctx);
 
       var raw = await eng.quiet(prompt, {
-        send: function (msgs, params) {
-          return GalAPI.chatWithRetry(msgs, { params: params, retries: 1 });
-        }
+        send: phoneSend
       });
 
       if (group) {
@@ -3090,9 +3096,7 @@
         '可以是发帖人本人回，也可以是别的角色插话，按各自性格说话，口语短句。\n' +
         '【输出格式】一行一条，不要别的内容：\n[评论|角色名|内容]';
       var raw = await eng.quiet(prompt, {
-        send: function (msgs, params) {
-          return GalAPI.chatWithRetry(msgs, { params: params, retries: 1 });
-        }, maxTokens: 400
+        send: phoneSend, maxTokens: 400
       });
       var re = /\[评论\|([^|\]\n]*)\|([^\]\n]*)\]/g, m;
       var got = 0;
@@ -4517,6 +4521,8 @@
     $('assets-note').innerHTML = html;
     $('btn-start').disabled = !loaded.card;
     if (typeof renderBoot === 'function') renderBoot();
+    /* 自定义开场的舰娘和场景都从卡里来：卡一载入就重画 */
+    if (typeof OPC !== 'undefined' && OPC && OPC.mode === 'custom') renderOpc();
   }
   function fillOpenings(card) {
     var d = card.data || card;
@@ -4644,13 +4650,328 @@
     restoreFrom(await GalStore.loadSlot(id), id);
   };
 
+  /* ============================================================
+     小手机单独的环境 + 副 API（v5.25）
+     ============================================================ */
+  function peCfg() {
+    return Object.assign({ independent: false, every: 1 }, GalStore.local('gal_phone_env') || {});
+  }
+  function savePe(patch) {
+    var c = Object.assign(peCfg(), patch || {});
+    GalStore.local('gal_phone_env', c);
+    eng.cfg.phoneIndependent = !!c.independent;
+    return c;
+  }
+  eng.cfg.phoneIndependent = !!peCfg().independent;
+  /** 手机相关的独立请求都走这里：副 API 能用就用它，否则用主 API */
+  function phoneSend(msgs, params) {
+    var q = GalAPI.quietConfig();
+    return GalAPI.chatWithRetry(msgs, { params: params, retries: 1, config: q || undefined });
+  }
+  var peTurns = 0, peBusy = false;
+  /** 每轮正文演完之后：按设置隔几轮跑一次「手机里又发生了什么」 */
+  function phoneEnvAfterTurn() {
+    var pe = peCfg();
+    if (!pe.independent || !(pe.every > 0)) return;
+    peTurns++;
+    if (peTurns % pe.every) return;
+    if (peBusy) return;
+    peBusy = true;
+    var myRun = runId;
+    eng.phoneEnvTick({ send: phoneSend }).then(function (r) {
+      if (runId !== myRun) return;
+      renderPhone(); refreshPhoneBadge();
+      if (!r.count) console.info('[手机环境] 这一轮没有新内容');
+    }).catch(function (e) {
+      toast('小手机这一轮没更新：' + String(e.message || e).split('\n')[0] +
+        '（正文不受影响）', 'warn', 7000);
+    }).then(function () { peBusy = false; });
+  }
+
+  function subNote() {
+    var n = $('sub-note'); if (!n) return;
+    var s = GalAPI.loadSubConfig(), pe = peCfg();
+    if (s.enabled && !GalAPI.subReady(s)) {
+      n.className = 'note warn'; n.textContent = '副 API 还没填全（地址 / 密钥 / 模型），先用主 API。';
+    } else if (GalAPI.subReady(s)) {
+      n.className = 'note ok'; n.textContent = '小手机走副 API：' + (s.model || s.protocol);
+    } else {
+      n.className = 'note'; n.textContent = pe.independent ? '小手机和正文共用主 API。' : '';
+    }
+  }
+  function loadSubToForm() {
+    if (!$('pe-on')) return;
+    var s = GalAPI.loadSubConfig(), pe = peCfg();
+    $('pe-on').checked = !!pe.independent;
+    $('pe-every').value = String(pe.every);
+    $('sub-on').checked = !!s.enabled;
+    $('sub-box').hidden = !s.enabled;
+    $('sub-protocol').value = s.protocol;
+    $('sub-base').value = s.baseUrl; $('sub-key').value = s.apiKey;
+    $('sub-model').value = s.model;
+    $('sub-temp').value = s.temperature; $('sub-max').value = s.maxTokens;
+    subNote();
+  }
+  function saveSubFromForm() {
+    if (!$('pe-on')) return;
+    GalAPI.saveSubConfig({
+      enabled: $('sub-on').checked,
+      protocol: $('sub-protocol').value,
+      baseUrl: $('sub-base').value.trim(), apiKey: $('sub-key').value.trim(),
+      model: $('sub-model').value.trim(),
+      temperature: parseFloat($('sub-temp').value) || 0.9,
+      maxTokens: parseInt($('sub-max').value, 10) || 1500
+    });
+    savePe({ independent: $('pe-on').checked, every: parseInt($('pe-every').value, 10) || 0 });
+    $('sub-box').hidden = !$('sub-on').checked;
+    subNote();
+  }
+  if ($('pe-on')) {
+    ['pe-on', 'pe-every', 'sub-on', 'sub-protocol', 'sub-base', 'sub-key', 'sub-model', 'sub-temp', 'sub-max']
+      .forEach(function (id) { $(id).addEventListener('change', saveSubFromForm); });
+    $('btn-sub-copy').onclick = function () {
+      var c = GalAPI.loadConfig();
+      $('sub-protocol').value = c.protocol; $('sub-base').value = c.baseUrl; $('sub-key').value = c.apiKey;
+      if (!$('sub-model').value.trim()) $('sub-model').value = c.model;
+      $('sub-on').checked = true;
+      saveSubFromForm();
+    };
+    $('btn-sub-models').onclick = async function () {
+      saveSubFromForm();
+      var s = GalAPI.loadSubConfig(), n = $('sub-note');
+      n.className = 'note'; n.textContent = '拉取模型列表…';
+      try {
+        var list = await GalAPI.listModels({ protocol: s.protocol, baseUrl: s.baseUrl, apiKey: s.apiKey });
+        var sel = $('sub-model-sel');
+        sel.innerHTML = '<option value="">（从列表里挑一个）</option>' + list.map(function (m) {
+          return '<option' + (m === s.model ? ' selected' : '') + '>' + esc(m) + '</option>';
+        }).join('');
+        sel.hidden = !list.length;
+        sel.onchange = function () { if (sel.value) { $('sub-model').value = sel.value; saveSubFromForm(); } };
+        n.className = 'note ok'; n.textContent = '拉到 ' + list.length + ' 个模型';
+      } catch (e) { n.className = 'note bad'; n.textContent = String(e.message || e).split('\n')[0]; }
+    };
+    $('btn-sub-test').onclick = async function () {
+      saveSubFromForm();
+      var q = GalAPI.quietConfig(), n = $('sub-note');
+      if (!q) { n.className = 'note warn'; n.textContent = '先打开「小手机用单独的 API」并填全地址、密钥、模型。'; return; }
+      n.className = 'note'; n.textContent = '测试中…';
+      try {
+        var r = await GalAPI.test(q);
+        n.className = 'note ' + (r.verified === false ? 'warn' : 'ok');
+        n.textContent = '通了，' + r.ms + 'ms' + (r.reply ? '，回复：' + r.reply : '');
+      } catch (e) { n.className = 'note bad'; n.textContent = String(e.message || e).split('\n')[0]; }
+    };
+  }
+
+  /* ============================================================
+     自定义开场（v5.25）：身份 / 时间地点 / 出场舰娘（好感、誓约、服装、状态）/ 事件
+     逻辑在 core/opening.js，这里是界面。草稿存 gal_op_draft，关掉再开还在。
+     ============================================================ */
+  var OPC = {
+    mode: GalStore.local('gal_op_mode') === 'custom' ? 'custom' : 'card',
+    spec: GalStore.local('gal_op_draft') || { identity: 'new', cast: [], aiOpening: true, day: 1 },
+    persona: GalStore.local('gal_op_persona') !== false,
+    q: ''
+  };
+  function opcSave() { GalStore.local('gal_op_draft', OPC.spec); }
+  function setOpMode(m) {
+    OPC.mode = m === 'custom' ? 'custom' : 'card';
+    GalStore.local('gal_op_mode', OPC.mode);
+    PA2('[data-opmode]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-opmode') === OPC.mode); });
+    $('op-card').hidden = OPC.mode !== 'card';
+    $('op-custom').hidden = OPC.mode !== 'custom';
+    if (OPC.mode === 'custom') renderOpc();
+    if (typeof renderBootReady === 'function') renderBootReady();
+  }
+  function opcChips(group, list, cur) {
+    return '<div class="opc-chips">' + list.map(function (x) {
+      var k = x.k || x.t;
+      return '<button type="button" data-chip="' + group + '" data-v="' + esc(k) + '" class="' + (k === cur ? 'on' : '') + '">' + esc(x.t) + '</button>';
+    }).join('') + '</div>';
+  }
+  function opcCastCard(c) {
+    var max = c.oath ? 200 : 100, outs = Opening.outfitsOf(c.name);
+    var outSel = outs.length > 1
+      ? '<select data-f="outfit">' + outs.map(function (o) { return '<option' + (o === c.outfit ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>'
+      : '<input type="text" data-f="outfit" value="' + esc(c.outfit || Opening.defaultOutfit(c.name)) + '" placeholder="服装">';
+    return '<div class="opc-c" data-n="' + esc(c.name) + '">' +
+      '<img class="av" alt="" src="' + esc(Phone.avatarOf(c.name)) + '">' +
+      '<div class="opc-cb">' +
+        '<div class="opc-ch"><b>' + esc(c.name) + '</b>' +
+          '<label class="chk"><input type="checkbox" data-f="oath"' + (c.oath ? ' checked' : '') + '> 已誓约</label>' +
+          '<button type="button" class="opc-del" data-del="1" title="移出">×</button></div>' +
+        '<div class="opc-fav"><span>好感</span><input type="range" data-f="favor" min="0" max="' + max + '" value="' + c.favor + '">' +
+          '<b>' + c.favor + '</b></div>' +
+        '<div class="opc-two">' + outSel +
+          '<input type="text" data-f="state" list="opc-states" value="' + esc(c.state || '平静') + '" placeholder="当前状态"></div>' +
+        '<input type="text" data-f="note" value="' + esc(c.note || '') + '" placeholder="一句备注：和你的关系、现在在干嘛（可不填）">' +
+      '</div></div>';
+  }
+  function renderOpcCast() {
+    var box = $('opc-cast'); if (!box) return;
+    var cast = OPC.spec.cast || [];
+    box.innerHTML = cast.length ? cast.map(opcCastCard).join('')
+      : '<div class="opc-empty">还没选人。上面搜名字加进来，最多 ' + Opening.MAX_CAST + ' 位。</div>';
+    var cnt = $('opc-count'); if (cnt) cnt.textContent = cast.length + ' / ' + Opening.MAX_CAST;
+  }
+  function renderOpcResults() {
+    var box = $('opc-results'); if (!box) return;
+    var q = OPC.q.trim();
+    var have = {}; (OPC.spec.cast || []).forEach(function (c) { have[c.name] = 1; });
+    var all = Opening.roster();
+    var hits = (q ? all.filter(function (n) { return n.indexOf(q) >= 0 || n.toLowerCase().indexOf(q.toLowerCase()) >= 0; })
+                  : all.slice(0, 24)).filter(function (n) { return !have[n]; }).slice(0, 30);
+    box.innerHTML = hits.map(function (n) {
+      var expr = (window.RESOURCE.characters || {})[n];
+      return '<button type="button" data-add="' + esc(n) + '"' + (expr ? ' class="ex" title="有表情差分"' : '') + '>' +
+        '<img alt="" loading="lazy" src="' + esc(Phone.avatarOf(n)) + '">' + esc(n) + '</button>';
+    }).join('') || '<div class="opc-empty">没找到「' + esc(q) + '」。</div>';
+  }
+  function renderOpc() {
+    var box = $('op-custom'); if (!box) return;
+    if (!Opening.roster().length) {
+      box.innerHTML = '<div class="opc-empty">先在第 1 步载入角色卡 —— 舰娘和场景都从卡里来。</div>';
+      return;
+    }
+    /* 草稿里的地点 / 时段只在玩家自己改的时候才动：卡还没载完时场景表不全，
+       这里要是把「不在表里」的地点改掉，读完卡回来就丢了（刷新页面时会先渲染一次） */
+    var S = OPC.spec, locs = Opening.scenes();
+    var L = opcLocPeriod(), curLoc = L.loc, pers = Opening.periodsOf(curLoc), curPer = L.period;
+    var id = Opening.IDENTITIES.filter(function (x) { return x.k === S.identity; })[0] || Opening.IDENTITIES[0];
+    var tpls = Opening.templates();
+    box.innerHTML =
+      '<section class="opc-sec"><h5>① 你的身份</h5>' + opcChips('identity', Opening.IDENTITIES, S.identity) +
+        '<textarea id="opc-idtext" rows="3" placeholder="写几句你是谁、什么来历">' + esc(S.identityText != null ? S.identityText : id.d) + '</textarea>' +
+        '<label class="chk"><input type="checkbox" id="opc-persona"' + (OPC.persona ? ' checked' : '') + '> 同时写进我的人设（以后每一轮都带上）</label></section>' +
+      '<section class="opc-sec"><h5>② 时间和地点</h5>' +
+        '<div class="opc-scene"><div class="opc-prev" id="opc-prev"></div><div class="opc-sf">' +
+          '<label>地点 <select id="opc-loc">' + locs.map(function (l) { return '<option' + (l === curLoc ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('') + '</select></label>' +
+          '<div class="grid2"><label>时段 <select id="opc-period">' + pers.map(function (p) { return '<option' + (p === curPer ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>' +
+          '<label>第几天 <input type="number" id="opc-day" min="1" value="' + (S.day || 1) + '"></label></div>' +
+        '</div></div></section>' +
+      '<section class="opc-sec"><h5>③ 出场舰娘 <span id="opc-count"></span></h5>' +
+        '<input type="text" id="opc-q" placeholder="搜名字，例如 柴郡、Z23、贝尔法斯特" value="' + esc(OPC.q) + '">' +
+        '<div class="opc-results" id="opc-results"></div>' +
+        '<datalist id="opc-states">' + Opening.STATES.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('') + '</datalist>' +
+        '<div id="opc-cast"></div></section>' +
+      '<section class="opc-sec"><h5>④ 开场事件</h5>' + opcChips('event', Opening.EVENTS, S.eventTitle) +
+        '<textarea id="opc-event" rows="3" placeholder="写一段开场发生了什么（可不填，只用上面的标签也行）">' + esc(S.event || '') + '</textarea></section>' +
+      '<section class="opc-sec"><h5>⑤ 开场方式</h5>' +
+        opcChips('ai', [{ k: 'ai', t: '让 AI 按这些设定写开场（推荐）' }, { k: 'self', t: '直接开始，我先说话' }], S.aiOpening === false ? 'self' : 'ai') +
+        '<p class="note">都会先把你选的场景和人摆上台；选「AI 写」会接着自动发一次请求写开场。</p></section>' +
+      '<section class="opc-sec"><h5>模板</h5><div class="row">' +
+        '<select id="opc-tpl"><option value="">（读取保存过的开场）</option>' + tpls.map(function (t) { return '<option>' + esc(t.name) + '</option>'; }).join('') + '</select>' +
+        '<button type="button" id="opc-tpl-del">删除</button></div>' +
+        '<div class="row"><input type="text" id="opc-tpl-name" placeholder="模板名"><button type="button" id="opc-tpl-save">保存当前设定为模板</button></div></section>';
+    renderOpcPrev(); renderOpcCast(); renderOpcResults();
+  }
+  /** 实际用的地点和时段：草稿里的不在场景表里就退回办公室 / 第一个 */
+  function opcLocPeriod() {
+    var S = OPC.spec, locs = Opening.scenes();
+    var loc = S.loc && locs.indexOf(S.loc) >= 0 ? S.loc : (locs.indexOf('指挥官办公室') >= 0 ? '指挥官办公室' : locs[0] || S.loc || '');
+    var pers = Opening.periodsOf(loc);
+    return { loc: loc, period: pers.indexOf(S.period) >= 0 ? S.period : pers[0] };
+  }
+  function renderOpcPrev() {
+    var el = $('opc-prev'); if (!el) return;
+    var L = opcLocPeriod();
+    var s = (window.RESOURCE.scenes || {})[L.loc] || {};
+    var url = s[L.period] || s[Object.keys(s)[0]] || '';
+    el.style.backgroundImage = url ? 'url("' + ImgNet.srcFor(url) + '")' : 'none';
+  }
+  function opcCastOf(el) {
+    var card = el.closest('.opc-c'); if (!card) return null;
+    var n = card.getAttribute('data-n');
+    return (OPC.spec.cast || []).filter(function (c) { return c.name === n; })[0] || null;
+  }
+  function bindOpc() {
+    var box = $('op-custom'); if (!box) return;
+    PA2('[data-opmode]').forEach(function (b) { b.onclick = function () { setOpMode(b.getAttribute('data-opmode')); }; });
+    box.addEventListener('click', function (e) {
+      var t = e.target;
+      var chip = t.closest('[data-chip]');
+      if (chip) {
+        var g = chip.getAttribute('data-chip'), v = chip.getAttribute('data-v');
+        if (g === 'identity') {
+          OPC.spec.identity = v;
+          var id = Opening.IDENTITIES.filter(function (x) { return x.k === v; })[0];
+          OPC.spec.identityText = id ? id.d : '';
+        } else if (g === 'event') {
+          var ev = Opening.EVENTS.filter(function (x) { return x.t === v; })[0];
+          OPC.spec.eventTitle = OPC.spec.eventTitle === v ? '' : v;
+          if (ev && OPC.spec.eventTitle && !String(OPC.spec.event || '').trim()) OPC.spec.event = ev.d;
+        } else if (g === 'ai') OPC.spec.aiOpening = v === 'ai';
+        opcSave(); renderOpc(); return;
+      }
+      var add = t.closest('[data-add]');
+      if (add) {
+        var cast = OPC.spec.cast = OPC.spec.cast || [];
+        if (cast.length >= Opening.MAX_CAST) { toast('最多 ' + Opening.MAX_CAST + ' 位同时出场。', 'warn', 4000); return; }
+        var n = add.getAttribute('data-add');
+        cast.push({ name: n, favor: 60, oath: false, outfit: Opening.defaultOutfit(n), state: '平静', note: '' });
+        opcSave(); renderOpcCast(); renderOpcResults(); return;
+      }
+      if (t.closest('[data-del]')) {
+        var c = opcCastOf(t);
+        if (c) OPC.spec.cast = OPC.spec.cast.filter(function (x) { return x !== c; });
+        opcSave(); renderOpcCast(); renderOpcResults(); return;
+      }
+      if (t.id === 'opc-tpl-save') {
+        var nm = Opening.saveTemplate($('opc-tpl-name').value, opcSpec());
+        toast('已保存模板「' + nm + '」', 'ok', 3000); renderOpc(); return;
+      }
+      if (t.id === 'opc-tpl-del') {
+        var sel = $('opc-tpl').value; if (!sel) return;
+        if (!confirm('删除模板「' + sel + '」？')) return;
+        Opening.deleteTemplate(sel); renderOpc();
+      }
+    });
+    box.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t.id === 'opc-q') { OPC.q = t.value; renderOpcResults(); return; }
+      if (t.id === 'opc-idtext') { OPC.spec.identityText = t.value; OPC.spec.identity = 'custom'; opcSave(); return; }
+      if (t.id === 'opc-event') { OPC.spec.event = t.value; opcSave(); return; }
+      var f = t.getAttribute('data-f'); if (!f) return;
+      var c = opcCastOf(t); if (!c) return;
+      if (f === 'favor') { c.favor = +t.value; t.nextElementSibling.textContent = t.value; }
+      else if (f === 'oath') {
+        c.oath = t.checked;
+        if (!c.oath && c.favor > 100) c.favor = 100;
+        opcSave(); renderOpcCast(); return;
+      } else c[f] = t.value;
+      opcSave();
+    });
+    box.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.id === 'opc-loc') { OPC.spec.loc = t.value; OPC.spec.period = ''; opcSave(); renderOpc(); }
+      else if (t.id === 'opc-period') { OPC.spec.period = t.value; opcSave(); renderOpcPrev(); }
+      else if (t.id === 'opc-day') { OPC.spec.day = +t.value || 1; opcSave(); }
+      else if (t.id === 'opc-persona') { OPC.persona = t.checked; GalStore.local('gal_op_persona', t.checked); }
+      else if (t.id === 'opc-tpl' && t.value) {
+        var tp = Opening.templates().filter(function (x) { return x.name === t.value; })[0];
+        if (tp) { OPC.spec = JSON.parse(JSON.stringify(tp.spec)); opcSave(); renderOpc(); toast('已读取模板「' + tp.name + '」', 'ok', 2500); }
+      } else if (t.getAttribute('data-f') === 'outfit' || t.getAttribute('data-f') === 'state') {
+        var c = opcCastOf(t); if (c) { c[t.getAttribute('data-f')] = t.value; opcSave(); }
+      }
+    });
+    setOpMode(OPC.mode);
+  }
+  function opcSpec() {
+    var L = opcLocPeriod();
+    return Opening.normalize(Object.assign({}, OPC.spec, { loc: L.loc, period: L.period,
+      userName: ($('cfg-user').value || '').trim() || '指挥官' }));
+  }
+
   $('btn-start').onclick = function () {
     saveCfgFromForm();
+    saveSubFromForm();
     if (!loaded.preset) {
       $('boot-note').innerHTML = '<span class="warn">没载入预设 —— 模型多半不会按剧本格式输出。' +
         '仍要开始的话再点一次。</span>';
       loaded.preset = 'warned'; return;
     }
+    if (OPC.mode === 'custom') { startCustom(); return; }
     var list = $('opening-sel')._list || [];
     var pick = list[parseInt($('opening-sel').value, 10)] || null;
     currentOpening = pick ? pick.n : null;
@@ -4690,6 +5011,49 @@
       textEl.textContent = '输入一句话开始。';
     }
   };
+
+  /** 自定义开场：按设定摆好场景和人 → 演出这一小段 →（选了的话）让 AI 接着写开场 */
+  function startCustom() {
+    var spec = opcSpec();
+    if (OPC.persona) {
+      var per = Editors.loadPersona();
+      per.name = spec.userName;
+      if (spec.identityText) per.description = spec.identityText;
+      Editors.savePersona(per);
+    }
+    currentOpening = '自定义开场' + (spec.eventTitle ? '·' + spec.eventTitle : '');
+    runId = newRunId(); activeNode = null; turnStack = [];
+    eng.macroVars = {}; eng.history = []; eng.log = []; eng.phoneSent = []; eng.phoneSeq = 0;
+    peTurns = 0;
+    eng.vars = Opening.vars(spec);
+    enterGame();
+    updateTurnUI();
+    var raw = Opening.script(spec);
+    eng.history.push({ role: 'assistant', content: raw });
+    var r = eng.processOutput(raw);
+    lastResult = r; lastRaw = raw;
+    speakerEl.className = 'narrator'; speakerEl.textContent = '系统';
+    textEl.textContent = '正在加载立绘和背景…';
+    var myRun = runId;
+    waitImages(r.modules).then(function () {
+      stopSpinner();
+      if (runId !== myRun) return;
+      play(r.modules);
+      if (treeOn()) {
+        var rootNode = SaveTree.newId('n');
+        GalStore.saveSlot('node:' + rootNode,
+          snapshot({ type: 'auto', nodeId: rootNode, parent: '', name: '开场' })).catch(function () {});
+        activeNode = rootNode;
+      }
+      autosave({ skipNode: true });
+      if (spec.aiOpening) {
+        /* 让大家先看一眼摆好的场景，再发请求 */
+        setTimeout(function () { if (runId === myRun) submit(Opening.directive(spec)); }, 600);
+      } else {
+        toast('场景摆好了，输入你的第一句话开始。', 'ok', 5000);
+      }
+    });
+  }
 
   /* 续最近的那一份。槽名由 renderRuns() 填进 dataset，
      退回 'auto' 是为了兼容老版本留下的那个全局槽。 */
@@ -4780,6 +5144,8 @@
   /* 恢复上次的素材与配置 */
   onLayoutChange();           // 设备选择按钮的高亮、输入框提示语
   loadCfgToForm();
+  loadSubToForm();
+  bindOpc();
   loadUserRegex();
   Promise.all([GalStore.getCard(), GalStore.getPreset(), GalStore.loadSlot('auto')])
     .then(function (r) {

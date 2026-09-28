@@ -32,14 +32,14 @@
 })();
 </script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.24">
+<link rel="stylesheet" href="app/style.css?v=5.25">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.24">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.25">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.24">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.24">
+<link rel="stylesheet" href="app/phone.css?v=5.25">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.25">
 <!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
-<link rel="stylesheet" href="app/mobile.css?v=5.24">
+<link rel="stylesheet" href="app/mobile.css?v=5.25">
 </head>
 <body>
 
@@ -311,7 +311,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.24</span>
+        <span>gal 引擎 · v5.25</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -393,6 +393,53 @@
           <p class="boot-tip">地址填根地址就行，<code>/v1</code> 这些会自动补。
             401/403 是密钥问题，404 多半是地址少了或多了 <code>/v1</code>，
             控制台报 CORS 说明这个端点不让浏览器直连，得走中转。</p>
+          <!-- 副 API：小手机当成单独的环境（v5.25）。配置存 gal_api2_config / gal_phone_env -->
+          <div class="boot-sub">
+            <h4>小手机 · 单独的环境</h4>
+            <label class="chk"><input type="checkbox" id="pe-on"> 把小手机当成单独的环境</label>
+            <p class="dim">打开后：正文请求里不再让 AI 顺手写手机内容（剧情更专注、省 token）；
+              每轮正文结束后，另外发一次请求，专门生成这段时间手机里新冒出来的私聊、群聊、动态和热点。
+              手机里你自己发的消息、评论，本来就是单独生成的。</p>
+            <label>多久更新一次手机
+              <select id="pe-every">
+                <option value="1">每轮正文之后</option>
+                <option value="2">每 2 轮</option>
+                <option value="3">每 3 轮</option>
+                <option value="0">不自动（只有我在手机里聊天时才生成）</option>
+              </select>
+            </label>
+            <label class="chk"><input type="checkbox" id="sub-on"> 小手机用单独的 API（副 API）</label>
+            <p class="dim">可以给手机填一个便宜、快的模型，正文继续用好模型。不开就和正文共用上面的主 API。</p>
+            <div id="sub-box" hidden>
+              <div class="grid2">
+                <label>协议
+                  <select id="sub-protocol">
+                    <option value="openai">OpenAI 兼容</option>
+                    <option value="claude">Anthropic</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
+                </label>
+                <label>模型
+                  <span style="display:flex;gap:6px">
+                    <input type="text" id="sub-model" placeholder="例如 deepseek-chat" style="flex:1">
+                    <button type="button" id="btn-sub-models" style="white-space:nowrap;padding:8px 12px">拉取</button>
+                  </span>
+                  <select id="sub-model-sel" hidden></select>
+                </label>
+              </div>
+              <label>副 API 地址 <input type="text" id="sub-base" placeholder="https://api.deepseek.com"></label>
+              <label>副 API 密钥 <input type="password" id="sub-key" placeholder="sk-..."></label>
+              <div class="grid2">
+                <label>温度 <input type="number" id="sub-temp" step="0.05" min="0" max="2"></label>
+                <label>最大输出 <input type="number" id="sub-max" step="100" min="200"></label>
+              </div>
+              <div class="row">
+                <button type="button" id="btn-sub-test">测试副 API</button>
+                <button type="button" id="btn-sub-copy" title="先把主 API 的地址和密钥抄过来，再改模型">抄主 API</button>
+                <span class="note" id="sub-note"></span>
+              </div>
+            </div>
+          </div>
           <!-- 立绘 / 背景加载不出来：图片网络设置 + 测试（app.js netBoxHTML()，手机设置里也有一份） -->
           <div class="boot-net">
             <h4>立绘 / 背景加载不出来？</h4>
@@ -422,7 +469,15 @@
         <!-- ④ 开场 -->
         <div class="boot-pane" data-pane="go">
           <label>你的称呼 <input type="text" id="cfg-user" placeholder="指挥官"></label>
-          <label>开场白 <select id="opening-sel"><option value="">（先载入角色卡）</option></select></label>
+          <!-- 开场：卡里写好的几段 / 自己定（v5.25）。自定义那一大块由 app.js「自定义开场」一节画 -->
+          <div class="op-mode seg" role="tablist">
+            <button type="button" data-opmode="card" class="on">卡里的开场白</button>
+            <button type="button" data-opmode="custom">自定义开场</button>
+          </div>
+          <div id="op-card">
+            <label>开场白 <select id="opening-sel"><option value="">（先载入角色卡）</option></select></label>
+          </div>
+          <div id="op-custom" hidden></div>
           <div class="boot-ready" id="boot-ready"></div>
           <div class="note" id="boot-note"></div>
         </div>
@@ -446,26 +501,27 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.24"></script>
-<script src="core/cardres.js?v=5.24"></script>
-<script src="core/tokens.js?v=5.24"></script>
-<script src="core/vector.js?v=5.24"></script>
-<script src="core/imagegen.js?v=5.24"></script>
-<script src="core/snapshot.js?v=5.24"></script>
-<script src="core/gallery.js?v=5.24"></script>
-<script src="core/cg.js?v=5.24"></script>
-<script src="core/resolver.js?v=5.24"></script>
-<script src="core/worldbook.js?v=5.24"></script>
-<script src="core/regex.js?v=5.24"></script>
-<script src="core/prompt.js?v=5.24"></script>
-<script src="core/script.js?v=5.24"></script>
-<script src="core/phone.js?v=5.24"></script>
-<script src="core/engine.js?v=5.24"></script>
-<script src="core/api.js?v=5.24"></script>
-<script src="core/savetree.js?v=5.24"></script>
-<script src="core/imgnet.js?v=5.24"></script>
-<script src="core/storage.js?v=5.24"></script>
-<script src="core/editors.js?v=5.24"></script>
-<script src="app/app.js?v=5.24"></script>
+<script src="core/crash.js?v=5.25"></script>
+<script src="core/cardres.js?v=5.25"></script>
+<script src="core/tokens.js?v=5.25"></script>
+<script src="core/vector.js?v=5.25"></script>
+<script src="core/imagegen.js?v=5.25"></script>
+<script src="core/snapshot.js?v=5.25"></script>
+<script src="core/gallery.js?v=5.25"></script>
+<script src="core/cg.js?v=5.25"></script>
+<script src="core/resolver.js?v=5.25"></script>
+<script src="core/worldbook.js?v=5.25"></script>
+<script src="core/regex.js?v=5.25"></script>
+<script src="core/prompt.js?v=5.25"></script>
+<script src="core/script.js?v=5.25"></script>
+<script src="core/phone.js?v=5.25"></script>
+<script src="core/engine.js?v=5.25"></script>
+<script src="core/api.js?v=5.25"></script>
+<script src="core/savetree.js?v=5.25"></script>
+<script src="core/imgnet.js?v=5.25"></script>
+<script src="core/opening.js?v=5.25"></script>
+<script src="core/storage.js?v=5.25"></script>
+<script src="core/editors.js?v=5.25"></script>
+<script src="app/app.js?v=5.25"></script>
 </body>
 </html>

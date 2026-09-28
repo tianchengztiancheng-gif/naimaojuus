@@ -332,6 +332,7 @@
 
   global.Editors = {
     PHONE_RULE_ID: PHONE_RULE_ID, STAGE_RULE_ID: STAGE_RULE_ID,
+    PHONE_RULE_TEXT: PHONE_RULE_TEXT,
     IMAGE_RULE_ID: IMAGE_RULE_ID,
     phoneRuleEntry: phoneRuleEntry, stageRuleEntry: stageRuleEntry,
     imageRuleEntry: imageRuleEntry, setImageRuleEnabled: setImageRuleEnabled,

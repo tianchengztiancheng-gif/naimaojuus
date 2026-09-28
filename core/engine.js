@@ -202,6 +202,84 @@
     return add.length;
   };
 
+  /* ============================================================
+     小手机独立环境（v5.25）
+     打开后：正文的请求里不再带「手机内容输出规则」这类条目（主模型专心写剧情），
+     手机里的新内容改由每轮之后单独一次请求生成（走副 API，没有副 API 就走主 API）。
+     ============================================================ */
+  var PHONE_ENTRY = /小手机|手机内容|手机.*(契约|规则)|表情包名单/;
+  function isPhoneEntry(e) {
+    if (!e) return false;
+    if (global.Editors && e.uid === global.Editors.PHONE_RULE_ID) return true;
+    return PHONE_ENTRY.test(String(e.comment || ''));
+  }
+  Engine.isPhoneEntry = isPhoneEntry;
+
+  /** 正文请求用的世界书池：独立环境时剔掉手机那几条 */
+  Engine.prototype.mainPool = function () {
+    if (!this.cfg.phoneIndependent) return this.pool;
+    return this.pool.filter(function (e) { return !isPhoneEntry(e); });
+  };
+
+  /**
+   * 「这段时间手机上又发生了什么」的提示词。
+   * 输入：刚演完的剧情（最近若干句）、当前状态、手机最近记录、相关人设；
+   * 输出要求：只写 [短信|…] [群聊|…] [小红书|…] [评论|…] [趋势|…] 标记。
+   */
+  Engine.prototype.phoneEnvPrompt = function (opt) {
+    opt = opt || {};
+    var v = this.vars || {}, ppl = v.人物 || {};
+    var here = Object.keys(ppl).filter(function (n) { return ppl[n] && ppl[n].在场; });
+    var away = Object.keys(ppl).filter(function (n) { return ppl[n] && !ppl[n].在场; }).slice(0, 12);
+    var recent = this.log.slice(-(opt.recentLines || 14)).map(function (m) {
+      return (m.narration ? '旁白' : m.who) + '：' + m.text;
+    }).join('\n');
+    var ctx = this.quietContext(here.concat(away).join(' ') + ' ' + recent.slice(-600),
+      { loreChars: opt.loreChars || 2500, recentLines: 0 });
+    var phoneLog = '';
+    try {
+      phoneLog = global.Phone && global.Phone.renderForStory
+        ? global.Phone.renderForStory(global.Phone.scan(this.history, this.phoneSent,
+            { userName: this.cfg.userName || '指挥官' }), 4) : '';
+    } catch (e) { phoneLog = ''; }
+    var rule = (global.Editors && global.Editors.PHONE_RULE_TEXT) || '';
+    var favor = function (n) { var p = ppl[n] || {}; return n + (p.好感度 != null ? '(好感' + p.好感度 + (p.是否誓约 ? '·已誓约' : '') + ')' : ''); };
+    var user = this.cfg.userName || '指挥官';
+    return [
+      '[独立任务 · 港区手机环境。忽略之前的剧本格式要求，这次不写 <Gal> 正文]',
+      '你负责港区里舰娘们的手机：私聊、群聊、动态（热浪）、热点。正文剧情由别人写，你只写「这段时间手机上自然冒出来的新内容」。',
+      '',
+      '<当前状态>',
+      String(ctx.scene || '').split('\n最近发生的')[0] || '（无）',
+      here.length ? '在场：' + here.map(favor).join('、') : '',
+      away.length ? '不在场但认识的：' + away.map(favor).join('、') : '',
+      '</当前状态>',
+      '',
+      recent ? '<刚发生的剧情>\n' + recent + '\n</刚发生的剧情>' : '',
+      phoneLog ? '<手机最近记录>\n' + phoneLog + '\n</手机最近记录>' : '',
+      ctx.lore ? '<相关设定>\n' + ctx.lore + '\n</相关设定>' : '',
+      '',
+      rule,
+      '',
+      '这次的要求：',
+      '1. 输出 ' + (opt.min || 2) + '~' + (opt.max || 5) + ' 条手机内容，要和刚发生的剧情、各人的性格和好感度对得上；不在场的人更常私聊' + user + '或发动态，在场的人更常在群里聊。',
+      '2. 没有新鲜事时宁可少写，不要重复手机最近记录里已经说过的话。',
+      '3. 只输出标记本身，一行一条，不要解释、不要 <Gal>、不要 <UpdateVariable>。'
+    ].filter(function (x) { return x !== ''; }).join('\n');
+  };
+
+  /** 跑一次手机环境：生成 → 塞进历史（phoneOnly，主线组装时跳过，扫描器认领） */
+  Engine.prototype.phoneEnvTick = async function (opt) {
+    opt = opt || {};
+    var raw = await this.quiet(this.phoneEnvPrompt(opt), {
+      send: opt.send, maxTokens: opt.maxTokens || 1200, temperature: opt.temperature
+    });
+    raw = String(raw || '');
+    var n = (raw.match(/\[(短信|群聊|小红书|评论|趋势)\|/g) || []).length;
+    if (n) this.history.push({ role: 'assistant', content: raw, phoneOnly: true, phoneEnv: true });
+    return { raw: raw, count: n };
+  };
+
   /** 只组装不发送——干跑，用来检视会发出去什么 */
   Engine.prototype.dryRun = function (userText, opt) {
     opt = opt || {};
@@ -211,7 +289,7 @@
                            .slice(-this.cfg.historyLimit);
     var scanHist = hist.concat(userText ? [{ role: 'user', content: userText }] : []);
 
-    var wb = global.Worldbook.activate(this.pool, scanHist, {
+    var wb = global.Worldbook.activate(this.mainPool(), scanHist, {
       scanDepth: this.cfg.scanDepth,
       recursion: this.cfg.recursion,
       maxRecursion: this.cfg.maxRecursion,

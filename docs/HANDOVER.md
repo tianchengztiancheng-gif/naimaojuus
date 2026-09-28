@@ -1109,6 +1109,32 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - 测试：`tools/e2e-imgnet.mjs`（30），`tools/unit/test-imgnet.mjs`（41），冒烟 [7g]。
   改 `imgnet.js` 后 `tools/smoke-test.js` 的 `FILES` 里已经加了它；新增 core 文件记得也往那里加。
 
+## 七·十七、自定义开场 / 小手机单独环境 + 副 API（v5.25）
+
+- **自定义开场**（`core/opening.js` 纯逻辑，界面在 app.js「自定义开场」一节，`OPC` 状态）：
+  - spec：`{identity, identityText, userName, loc, period, day, event, eventTitle, aiOpening, cast:[{name,favor,oath,outfit,state,note}]}`。
+    `Opening.normalize()` 做默认值 / 上下限（好感 0–100，誓约 0–200）/ 去重 / 最多 6 人。
+  - `Opening.vars(spec)` → 开局变量（全员 `在场:true`，备注写进 `内心想法`）；`Opening.script(spec)` → 本地开场剧本
+    （抬头 `『✨ 第N天 · HH:MM · 地点 ✨』`，钟点按 `PERIOD_TIME` 由时段反推 —— 剧本解析是按钟点定时段的；`<背景|地点|时段>`、`<登场|…>`、事件按段落变旁白）；
+    `Opening.directive(spec)` → 给 AI 的开场指令，`startCustom()` 演完本地剧本后 600ms `submit()` 它。
+  - 草稿 `gal_op_draft`、模式 `gal_op_mode`、是否写人设 `gal_op_persona`、模板 `gal_custom_openings`（最多 30 个）。
+  - **坑**：刷新页面时 `bindOpc()` 会在卡载完之前先渲染一次，那时场景表只有内置的，草稿里的地点「不在表里」。
+    所以 `renderOpc()` **不改** `OPC.spec.loc/period`，显示和开局都用 `opcLocPeriod()` 现算。
+- **resolver.scene() 顺序改了**：用户别名 → **精确命中** → 预置别名（`resource/aliases.js`）→ 包含 → 相似 → 哈希。
+  以前预置别名排在精确命中前面，卡里真有「食堂」也会被映射到「美食街」。
+- **小手机单独环境**（`gal_phone_env = {independent, every}`，`eng.cfg.phoneIndependent`）：
+  - `Engine.isPhoneEntry(e)`：内置 `__engine_phone_rule`，或 comment 匹配 `/小手机|手机内容|手机.*(契约|规则)|表情包名单/`。
+    `Engine.prototype.mainPool()` 在独立模式下剔掉这些，`dryRun()` 用它激活世界书。
+  - `phoneEnvPrompt()` / `phoneEnvTick({send})`：一次 quiet 请求，结果带标记才 push `{role:'assistant', phoneOnly:true, phoneEnv:true}`，
+    主线组装跳过、`Phone.scan` 认领。app.js 的 `phoneEnvAfterTurn()` 挂在 `submit()` 里 `kickCG()` 之后，`every` 计数、`peBusy` 防重入、`runId` 变了丢弃。
+- **副 API**（`gal_api2_config`，`GalAPI.loadSubConfig/saveSubConfig/subReady/quietConfig`）：
+  `quietConfig()` 没开或没填全返回 null。app.js `phoneSend(msgs, params)` = `chatWithRetry(msgs, {config: quietConfig() || undefined})`，
+  `cgQuiet` / 手机私聊群聊 `chatTurn` / 动态评论 `sendComment` / 手机环境都走它。副 API 永远不开流式。
+- **移动端两处**：`html.m-rot #phone-overlay{width:var(--rw);height:var(--rh)}`（卡皮肤写死了 100vw×100dvh，手动转屏后尺寸不对）；
+  `max-height:700px` 竖屏时收起主屏简报的热点列表（小屏图标坞被挤出屏幕）。这两条 e2e-mobile 之前就挂着，这次一起修了。
+- 测试：`tools/e2e-opening.mjs`（40，假接口 main.api / sub.api，带一个最小预设 —— 没预设的话 prompt 里没有 chatHistory，拿不到开场指令），
+  `tools/unit/test-opening.mjs`（36），冒烟 [7h]；`smoke-test.js` 的 `FILES` 已加 `core/opening.js`。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

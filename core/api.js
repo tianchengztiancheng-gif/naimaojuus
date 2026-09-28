@@ -41,6 +41,48 @@
     return merged;
   }
 
+  /* ============================================================
+     副 API（v5.25）：小手机当成单独的环境 —— 私聊回复、群聊、动态评论、
+     每轮之后的「手机里又发生了什么」都走这一条，和正文的主 API 分开。
+     可以填一个便宜 / 快的模型专门跑手机，正文继续用好模型。
+     没开或没填全时 quietConfig() 返回 null，调用方就退回主 API。
+     ============================================================ */
+  var KEY2 = 'gal_api2_config';
+  var DEFAULTS2 = {
+    enabled: false,
+    protocol: 'openai',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    temperature: 0.9,
+    maxTokens: 1500,
+    stream: false
+  };
+  function loadSubConfig() {
+    try {
+      return Object.assign({}, DEFAULTS2, JSON.parse(global.localStorage.getItem(KEY2) || '{}'));
+    } catch (e) { return Object.assign({}, DEFAULTS2); }
+  }
+  function saveSubConfig(cfg) {
+    var merged = Object.assign(loadSubConfig(), cfg || {});
+    try { global.localStorage.setItem(KEY2, JSON.stringify(merged)); } catch (e) {}
+    return merged;
+  }
+  /** 副 API 能不能用（开了、地址密钥模型都填了） */
+  function subReady(c) {
+    c = c || loadSubConfig();
+    return !!(c.enabled && String(c.baseUrl || '').trim() && String(c.apiKey || '').trim() &&
+              (String(c.model || '').trim() || c.protocol === 'gemini'));
+  }
+  /** 给 chat(…, {config}) 用的覆盖项：副 API 能用就给它，不能用就 null（= 用主 API） */
+  function quietConfig() {
+    var c = loadSubConfig();
+    if (!subReady(c)) return null;
+    return { protocol: c.protocol, baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model,
+             temperature: c.temperature, maxTokens: c.maxTokens, stream: false,
+             postProcess: 'auto', prefillMode: 'off' };
+  }
+
   function trimSlash(s) { return String(s || '').replace(/\/+$/, ''); }
 
   /** 拼出最终请求地址。用户填根地址或完整地址都能用。 */
@@ -702,6 +744,8 @@
 
   global.GalAPI = {
     DEFAULTS: DEFAULTS, loadConfig: loadConfig, saveConfig: saveConfig,
+    DEFAULTS2: DEFAULTS2, loadSubConfig: loadSubConfig, saveSubConfig: saveSubConfig,
+    subReady: subReady, quietConfig: quietConfig,
     endpoint: endpoint, chat: chat, chatWithRetry: chatWithRetry,
     isTransient: isTransient, isFatal: isFatal, backoffMs: backoffMs,
     test: test, listModels: listModels, probe: probe, modelsUrl: modelsUrl, modelsUrls: modelsUrls,

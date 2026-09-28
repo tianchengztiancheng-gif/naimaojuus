@@ -928,3 +928,41 @@ html:not(.m-mobile) .m-only{display:none}
 .netbox .nb-verdict{margin:8px 0 0;font-size:12.5px;color:var(--sub)}
 .netbox .ok{color:#6fdca0}.netbox .warn{color:#e8b86a}.netbox .bad{color:#ff7a8e}.netbox .dim{color:#6f8a9c}
 .netbox .nb-tip{margin:0;font-size:11.5px;line-height:1.6;color:#6f8a9c}
+
+/* ===== 开场：卡里的开场白 / 自定义开场（v5.25）===== */
+#boot .op-mode{display:flex;border:1px solid rgba(120,200,230,.3);border-radius:10px;overflow:hidden;margin:4px 0 16px}
+#boot .op-mode button{flex:1;background:none;border:0;border-radius:0;margin:0;padding:10px 0;color:#92b0c4;font-size:13px}
+#boot .op-mode button+button{border-left:1px solid rgba(120,200,230,.2)}
+#boot .op-mode button:hover{background:rgba(96,205,240,.1);transform:none}
+#boot .op-mode button.on{background:rgba(96,205,240,.22);color:#e6f4fb;font-weight:600}
+#boot .opc-sec{margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid rgba(96,205,240,.12)}
+#boot .opc-sec:last-child{border-bottom:0}
+#boot .opc-sec h5{font-size:12.5px;color:#60cdf0;letter-spacing:.14em;margin:0 0 10px;font-weight:600;display:flex;gap:10px;align-items:baseline}
+#boot .opc-sec h5 span{color:#68889e;font-size:11.5px;letter-spacing:0;font-weight:400}
+#boot .opc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+#boot .opc-chips button{padding:6px 12px;font-size:12.5px;border-radius:16px;color:#92b0c4;border-color:rgba(96,205,240,.25);background:rgba(96,205,240,.05)}
+#boot .opc-chips button.on{color:#06141e;background:#60cdf0;border-color:#60cdf0;font-weight:600}
+#boot .opc-scene{display:grid;grid-template-columns:200px 1fr;gap:14px;align-items:start}
+#boot .opc-prev{aspect-ratio:16/10;border-radius:10px;background:#0b1c28 center/cover no-repeat;border:1px solid rgba(96,205,240,.2)}
+#boot .opc-results{display:flex;flex-wrap:wrap;gap:6px;max-height:172px;overflow-y:auto;margin:8px 0 12px;padding:2px}
+#boot .opc-results button{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:18px;font-size:12.5px;color:#c3dded}
+#boot .opc-results button.ex{border-color:rgba(120,222,180,.45)}
+#boot .opc-results img{width:24px;height:24px;border-radius:50%;object-fit:cover;background:#0b1c28}
+#boot .opc-c{display:flex;gap:12px;padding:10px 12px;border:1px solid rgba(96,205,240,.2);border-radius:12px;margin-bottom:8px;background:rgba(6,20,30,.45)}
+#boot .opc-c .av{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none;background:#0b1c28}
+#boot .opc-cb{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+#boot .opc-ch{display:flex;align-items:center;gap:10px}
+#boot .opc-ch b{color:#e2f0f8;font-size:14px}
+#boot .opc-ch .chk{padding:0;margin:0;font-weight:400;color:#f0a0c0}
+#boot .opc-ch .opc-del{margin-left:auto;padding:2px 10px;font-size:15px;line-height:1}
+#boot .opc-fav{display:flex;align-items:center;gap:8px;font-size:12px;color:#92b0c4}
+#boot .opc-fav input{flex:1;accent-color:#f07aa0}
+#boot .opc-fav b{min-width:30px;text-align:right;color:#f0a0c0}
+#boot .opc-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#boot .opc-empty{color:#68889e;font-size:12.5px;padding:10px 4px;line-height:1.7}
+#boot #op-custom .row input[type=text]{flex:1;min-width:120px}
+#boot #op-custom .row select{flex:1;min-width:140px}
+/* 副 API（小手机单独环境） */
+#boot .boot-sub{margin-top:18px;padding-top:14px;border-top:1px solid rgba(120,200,230,.16)}
+#boot .boot-sub h4{font-size:13px;letter-spacing:.12em;color:#8fb3c7;margin:0 0 10px;font-weight:600}
+#boot .boot-sub .dim{font-size:12px;color:#68889e;line-height:1.7;margin:-4px 0 12px}

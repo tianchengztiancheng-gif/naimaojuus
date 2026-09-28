@@ -197,15 +197,16 @@
     if (aliases[loc] && R.scenes[aliases[loc]]) {
       return take(aliases[loc], period, 'alias', loc);
     }
-    /* 0b. 预置映射表（resource/aliases.js），随包发布，用户登记的能覆盖它 */
+    /* 1. 地点 + 时段精确命中 —— 卡里真有这个场景就用它，排在预置映射前面
+       （v5.25：自定义开场从场景表里挑的地点，以前会被预置映射拐到别的场景去） */
+    var t = R.scenes[loc];
+    if (t) return t[period] ? take(loc, period, 'exact') : take(loc, null, 'other-period');
+
+    /* 1b. 预置映射表（resource/aliases.js），随包发布，用户登记的能覆盖它 */
     var preset = global.SCENE_ALIASES;
     if (preset && preset[loc] && R.scenes[preset[loc]]) {
       return take(preset[loc], period, 'alias', loc + '（预置）');
     }
-
-    /* 1. 地点 + 时段精确命中 */
-    var t = R.scenes[loc];
-    if (t) return t[period] ? take(loc, period, 'exact') : take(loc, null, 'other-period');
 
     /* 2. 互相包含，取最短（最贴近） */
     var contain = keys.filter(function (k) {

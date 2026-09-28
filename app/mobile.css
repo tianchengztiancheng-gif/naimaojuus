@@ -229,6 +229,12 @@ html.m-mobile #jup-root .kt-btn{min-height:38px}
 html.m-mobile #jup-root .ph-home{padding:calc(52px + var(--safe-t)) calc(14px + var(--safe-r)) calc(18px + var(--safe-b)) calc(14px + var(--safe-l));
   gap:14px;justify-content:center!important;overflow-y:auto}
 html.m-port #jup-root .ph-clock .t{font-size:56px}
+/* 矮屏（360×640 这类）：简报里的热点列表收起、时钟小一号，不然图标坞被挤到屏幕外 */
+@media (max-height:700px){
+  html.m-port #jup-root .ph-widget .whot{display:none}
+  html.m-port #jup-root .ph-clock .t{font-size:44px}
+  html.m-port #jup-root .ph-home{gap:10px}
+}
 html.m-land #jup-root .ph-home{flex-direction:row;align-items:center;gap:22px;
   padding-top:calc(48px + var(--safe-t))}
 html.m-land #jup-root .ph-clock{flex:1 1 0;max-width:420px;min-width:0}
@@ -288,6 +294,9 @@ html.m-rot-ccw{--safe-t:env(safe-area-inset-left,0px);--safe-r:env(safe-area-ins
 html.m-rot #stage{width:100%;height:100%}
 html.m-rot #boot .boot-shell{height:100%}
 html.m-rot .ph-frame{--w:var(--rw);--h:var(--rh)}
+/* 卡自带的手机皮肤把 #phone-overlay 写成 100vw × 100dvh（屏幕的宽高）；页面转了 90° 之后得按转过来的宽高来，
+   不然手机层还是竖着的尺寸、转过去只剩屏幕上方一小块 */
+html.m-rot #phone-overlay{width:var(--rw);height:var(--rh)}
 /* 顺时针（画横屏）：实际视口是竖着的窄屏，max-width:680 的规则会误中，改回横屏该有的样子 */
 html.m-rot-cw #boot .grid2{grid-template-columns:1fr 1fr}
 html.m-rot-cw #boot .grid3{grid-template-columns:1fr 1fr auto}
@@ -298,3 +307,16 @@ html.m-mobile #boot .boot-device .seg button{white-space:nowrap}
 html.m-port #boot .boot-device .seg{flex:1 1 auto}
 html.m-port #boot .boot-device .seg button{flex:1 1 0}
 html.m-port #boot .boot-device .orient-seg{flex-basis:100%}
+
+/* ---- 自定义开场（v5.25）：窄屏上场景预览叠在上面，按钮放大 ---- */
+html.m-mobile #boot .opc-scene{grid-template-columns:1fr}
+html.m-mobile #boot .opc-prev{height:110px;min-height:0;aspect-ratio:auto}
+html.m-mobile #boot .opc-sf .grid2{grid-template-columns:1fr 1fr}
+html.m-mobile #boot .opc-chips button{min-height:36px}
+html.m-mobile #boot .opc-results button{min-height:36px}
+html.m-mobile #boot .op-mode button{min-height:42px}
+/* 竖屏：头像缩小、服装和状态并排，一张卡别占满一屏 */
+html.m-port #boot .opc-c{gap:8px;padding:8px 10px}
+html.m-port #boot .opc-c .av{width:34px;height:34px}
+html.m-port #boot .opc-two{grid-template-columns:1fr 1fr;gap:6px}
+html.m-port #boot .opc-c input[type=text],html.m-port #boot .opc-c select{padding-top:8px;padding-bottom:8px}

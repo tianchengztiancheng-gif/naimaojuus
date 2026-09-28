@@ -46,7 +46,7 @@ const FILES = [
   'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
+  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -1370,6 +1370,28 @@ console.log('\n[7g] 图片网络（v5.24）');
   ok('开场也先等图', /waitImages\(r\.modules\)\.then/.test(src));
   ok('等图时「中断」变成「不等了」', /if \(imgSkip\) \{ imgSkip\(\); return; \}/.test(src));
   ok('翻到一句时后台预拉后两句', /lineImgs\(eng\.log\[qi \+ 1\]\)/.test(src));
+}
+
+console.log('\n[7h] 自定义开场 + 小手机单独环境 / 副 API（v5.25）');
+{
+  const $ = id => d.getElementById(id), src = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('Opening 加载了', !!w.Opening && typeof w.Opening.script === 'function');
+  ok('开场这一步有「卡里的开场白 / 自定义开场」', d.querySelectorAll('[data-opmode]').length === 2 && !!$('op-custom'));
+  d.querySelector('[data-opmode="custom"]').click();
+  ok('切到自定义：表单渲染出来（身份 / 地点 / 舰娘 / 事件 / 开场方式 / 模板）',
+     !$('op-custom').hidden && !!$('opc-idtext') && !!$('opc-loc') && !!$('opc-q') && !!$('opc-event') && !!$('opc-tpl'));
+  const q = $('opc-q'); q.value = w.Opening.roster()[0]; q.dispatchEvent(new w.Event('input', { bubbles: true }));
+  const btn = d.querySelector('#opc-results [data-add]');
+  if (btn) btn.click();
+  ok('搜名字加一位舰娘，出现调好感 / 状态的卡片', d.querySelectorAll('#opc-cast .opc-c').length === 1 &&
+     !!d.querySelector('#opc-cast input[data-f="favor"]') && !!d.querySelector('#opc-cast input[data-f="state"]'));
+  d.querySelector('[data-opmode="card"]').click();
+  ok('切回卡里的开场白', $('op-custom').hidden && !$('op-card').hidden);
+  ok('接口页有小手机单独环境和副 API', !!$('pe-on') && !!$('pe-every') && !!$('sub-on') && !!$('sub-base') && !!$('btn-sub-test'));
+  ok('GalAPI 有副 API 配置', typeof w.GalAPI.quietConfig === 'function' && w.GalAPI.quietConfig() === null);
+  ok('手机相关请求都走 phoneSend', (src.match(/send: phoneSend/g) || []).length >= 3);
+  ok('每轮正文之后跑手机环境', /kickCG\(res, startIdx\);[\s\S]{0,200}phoneEnvAfterTurn\(\)/.test(src));
+  ok('Engine 有手机环境', typeof w.Engine.prototype.phoneEnvTick === 'function' && typeof w.Engine.prototype.mainPool === 'function');
 }
 
 console.log('\n[8] 运行期未捕获错误');
