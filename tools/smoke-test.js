@@ -46,7 +46,7 @@ const FILES = [
   'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
+  'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -148,7 +148,7 @@ console.log('\n[5] App 页面');
   ok('页 ' + k, !!q('.ph-layer[data-app="' + k + '"]'));
 });
 run(() => q('.ph-app[data-app="cfg"]').click(), '打开设置');
-ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 10,
+ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 11,
    qa('.kt-nav button[data-sec]').length + ' 个');
 ok('外观滑块搬进来了', !!q('#tune-host input[type=range]'));
 ok('旧侧栏已移除', !d.getElementById('history') && !d.getElementById('saves'));
@@ -1392,6 +1392,21 @@ console.log('\n[7h] 自定义开场 + 小手机单独环境 / 副 API（v5.25）
   ok('手机相关请求都走 phoneSend', (src.match(/send: phoneSend/g) || []).length >= 3);
   ok('每轮正文之后跑手机环境', /kickCG\(res, startIdx\);[\s\S]{0,200}phoneEnvAfterTurn\(\)/.test(src));
   ok('Engine 有手机环境', typeof w.Engine.prototype.phoneEnvTick === 'function' && typeof w.Engine.prototype.mainPool === 'function');
+}
+
+console.log('\n[7i] 长期记忆 + 删掉导入的正则（v5.26）');
+{
+  const $ = id => d.getElementById(id), src = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('Memory 加载了', !!w.Memory && typeof w.Memory.plan === 'function' && typeof w.Engine.prototype.memoryTick === 'function');
+  d.querySelector('.kt-nav button[data-sec="mem"]').click();
+  ok('设置里有「记忆」：开关 / 保留轮数 / 整理间隔 / 接口 / 备忘 / 现在整理',
+     !!$('mem-on') && !!$('mem-keep') && !!$('mem-chunk') && !!$('mem-via') && !!$('mem-notes') && !!$('mem-now'));
+  ok('默认开着', $('mem-on').checked === true);
+  ok('每轮正文之后整理记忆', /phoneEnvAfterTurn\(\);\s*memoryAfterTurn\(\);/.test(src));
+  ok('记忆跟着存档、回合快照走，新周目清空', /memory: eng\.memory \|\| null/.test(src) && /memory: deepCopy\(eng\.memory/.test(src) &&
+     (src.match(/eng\.memory = Memory\.fresh\(\)/g) || []).length >= 2 && /eng\.memory = Memory\.norm\(deepCopy\(sv\.memory\)/.test(src));
+  ok('导入的正则在资源说明里有「删掉」按钮', /deleteUserRegex\(null\)/.test(src) && /id="rx-clear"/.test(src));
+  ok('正则列表里导入的那几条有「删除」', /data-rxdel=/.test(src) && /id="rx-del-one"/.test(src));
 }
 
 console.log('\n[8] 运行期未捕获错误');

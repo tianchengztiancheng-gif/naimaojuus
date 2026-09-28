@@ -433,7 +433,7 @@
     if (o.userText) history = history.concat([{ role: 'user', content: o.userText, _macro: !!o.userTextMacro }]);
 
     var out = [], report = [];
-    var histStart = -1, histEnd = -1;
+    var histStart = -1, histEnd = -1, memDone = false;
     /* 预设块按 prompt_order 的顺序求值宏（包括稍后才插进历史的深度块），
        setvar/getvar 才能前后呼应 */
     parsed.order.forEach(function (p) {
@@ -469,6 +469,8 @@
         case 'dialogueExamples':
           push('system', d.mes_example || '', 'dialogueExamples'); break;
         case 'chatHistory':
+          /* 长期记忆（更早剧情的总结）紧挨在对话历史前面 */
+          if (o.memory) { push('system', o.memory, 'memory', true); memDone = true; }
           // 作者注释(AN)与深度注入都锚在历史上
           push('system', renderWI(wb.anTop), 'WI·AN顶');
           histStart = out.length;
@@ -497,6 +499,7 @@
         }
       });
 
+    if (o.memory && !memDone) push('system', o.memory, 'memory', true);   // 预设里没有 chatHistory 占位
     if (o.extraSystem) push('system', o.extraSystem, 'extraSystem');
 
     var messages = parsed.params.squashSystem ? squash(out) : out;

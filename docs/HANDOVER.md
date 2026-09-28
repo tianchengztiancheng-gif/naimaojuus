@@ -1135,6 +1135,31 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - 测试：`tools/e2e-opening.mjs`（40，假接口 main.api / sub.api，带一个最小预设 —— 没预设的话 prompt 里没有 chatHistory，拿不到开场指令），
   `tools/unit/test-opening.mjs`（36），冒烟 [7h]；`smoke-test.js` 的 `FILES` 已加 `core/opening.js`。
 
+## 七·十八、长期记忆 / 删导入的正则（v5.26）
+
+- **为什么**：以前 `dryRun()` 只发 `history.slice(-historyLimit)`（40 条 = 20 轮），更早的直接丢；玩家反馈三十轮左右开始忘事、变糊。
+- **core/memory.js**（纯逻辑）：`eng.memory = {chunks:[{from,to,sig,fromTurn,toTurn,text,merged?,at}], notes}`。
+  下标都是**主线历史**（`!phoneOnly`）里的下标。`sig` = 块最后一条消息的 FNV 指纹；`valid()` 从头按「连续 + 指纹对得上」认块，
+  第一块对不上起后面全部作废 —— 撤回 / 重roll / 读档换分支都不用特别处理。
+  - `windowOf()`：没开记忆 = 老行为；开了 = 从 `covered()` 往后全发，但封顶 `(keep+chunk)*2+2` 条（总结失败时别无限长）。
+  - `plan()`：未覆盖的超过 `(keep+chunk)*2-1` 条才整理一块；块尾用 `alignEnd()` 对齐到 assistant（开场白占了一条时往后挪一条）。
+    `planNow()` 给「现在整理」用：只要保留轮数之外还有就整理。
+  - `transcript()`：剥思维链 / `<UpdateVariable>` / `<image>` / 手机标记，`<Gal>` 用 ScriptParser 转成「谁：说什么」，玩家的话标【名字】。
+    字段顺序要传 `order`（`eng.cfg.scriptOrder`），短文本自动识别会猜错。
+  - `mergePlan()`：总字数 > `maxChars` 且 ≥3 块 → 合并最早的一半成「前情提要」（`merged:true`）。
+  - `render()`：`<剧情记忆>…〔第 a～b 轮〕…〔备忘 · 必须记住〕…</剧情记忆>`。
+- **注入位置**：`PromptBuilder.build({memory})` 在 `chatHistory` 占位处、AN 顶之前 push（`raw=true`，不跑宏）；预设里没有 chatHistory 就放在 extraSystem 前面。
+  记忆关着时备忘也照发（`dryRun` 里单独 render 一份只有 notes 的）。
+- **Engine.memoryTick({send, now, max})**：循环 plan → quiet（temperature 0.3）→ makeChunk；请求回来前历史变了（指纹 / covered 对不上）就丢弃；
+  空结果抛错。每次最多 3 块（追赶老存档），然后看要不要合并。
+- **app.js**：`gal_memory_cfg`（`Memory.cfgOf` 规整），`eng.memCfg`；`memSend` 按 `via` 走主 / 副 API；`memoryAfterTurn()` 挂在 `phoneEnvAfterTurn()` 后面，
+  `memBusy` 防重入，成功后 `autosave({skipNode:true})`。记忆进 `snapshot()`、`beginTurn()`（撤回时恢复）、`restoreFrom()`；新周目两处 `Memory.fresh()`。
+  设置分区 `mem`（`renderMem()`）。`window.__gal.memoryNow()` 给测试用。
+- **删导入的正则**：`deleteUserRegex(names|null)` 改 `gal_user_regex`，顺带清 `gal_regex_off` 里 `user:名字` 的开关，再 `loadUserRegex()`。
+  入口：`noteAssets()` 里的 `#rx-clear`、正则列表的 `[data-rxdel]`、详情页 `#rx-del-one`。
+  `renderPreset()` 开头加了 `if (!$('pre-list')) return;` —— 以前在开场引导里导入正则会因为手机还没建而报错。
+- 测试：`tools/e2e-memory.mjs`（23），`tools/unit/test-memory.mjs`（34），冒烟 [7i]；设置分区数 10 → 11（冒烟 `侧栏分区`）。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

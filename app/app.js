@@ -1486,6 +1486,7 @@
       /* 出图另起一条线，不 await —— 剧情已经能推了，图慢慢来 */
       if (startIdx != null) kickCG(res, startIdx);
       phoneEnvAfterTurn();
+      memoryAfterTurn();
       autoRegisterScenes(res.misses);
     } catch (e) {
       /* 重roll 失败：已经撤掉的那一版原样放回去，别让玩家两头落空 */
@@ -1552,6 +1553,7 @@
       turnNo: last ? last.turn + 1 : 0,
       vars: deepCopy(eng.vars),
       macroVars: deepCopy(eng.macroVars || {}),
+      memory: deepCopy(eng.memory || null),
       cursor: qi,
       node: activeNode,          // 这一轮从哪个存档节点出发
       turnNode: null,            // 这一轮自己的节点（checkpoint 时定）
@@ -1593,6 +1595,7 @@
     eng.log = eng.log.filter(function (m) { return m.turn < snap.turnNo; });
     eng.vars = deepCopy(snap.vars) || {};
     eng.macroVars = deepCopy(snap.macroVars) || {};
+    if (snap.memory) eng.memory = Memory.norm(deepCopy(snap.memory));
     activeNode = snap.node;
   }
 
@@ -2002,6 +2005,7 @@
     { k:'book',  t:'世界书',   d:'设定条目与触发' },
     { k:'pre',   t:'预设',     d:'提示词块与顺序' },
     { k:'vars',  t:'变量',     d:'场景与角色状态' },
+    { k:'mem',   t:'记忆',     d:'长期记忆与备忘' },
     { k:'save',  t:'存读档',   d:'进度存取' },
     { k:'tune',  t:'外观',     d:'立绘与对话框' },
     { k:'img',   t:'文生图',   d:'NovelAI 出图与 CG' },
@@ -2057,7 +2061,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.24</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.26</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -2110,6 +2114,7 @@
       '<span class="ic">🧩</span>左边选一个块</div></div></div></div>',
 
     vars:  '<div class="kt-pane-bd pad" id="varsbody"></div>',
+    mem:   '<div class="kt-pane-bd pad" id="mem-host"></div>',
     save:  '<div class="kt-pane-bd pad">' +
       '<div class="kt-sec"><h4>存 读 档</h4>' +
       '<p class="kt-hint">存档现在是一棵树：每一轮自动存一个节点，读旧节点接着玩会长出分支。' +
@@ -2296,6 +2301,14 @@
       if (!e.target.closest) return;
       var gh = e.target.closest('.kt-ghead');
       if (gh) { gh.parentNode.classList.toggle('open'); preOpen = true; return; }
+      var rd = e.target.getAttribute && e.target.getAttribute('data-rxdel');
+      if (rd) {
+        e.stopPropagation();
+        if (!confirm('删掉导入的正则「' + rd + '」？')) return;
+        deleteUserRegex([rd]); preOpen = true; renderPreset();
+        $('pre-split').classList.remove('show-edit');
+        return;
+      }
       var rt = e.target.getAttribute && e.target.getAttribute('data-rtog');
       if (rt) {
         var offMap = GalStore.local('gal_regex_off') || {};
@@ -2363,7 +2376,7 @@
     openSection('me');
   }
 
-  var SEC_ICON = { me:'🪪', book:'📚', pre:'🧩', vars:'📊',
+  var SEC_ICON = { me:'🪪', book:'📚', pre:'🧩', vars:'📊', mem:'🧠',
                    save:'💾', tune:'🎚', img:'🎨', net:'🖼', debug:'🔧', api:'⚙' };
 
   function openSection(k) {
@@ -2399,6 +2412,7 @@
     }
     else if (k === 'me') renderPersona();
     else if (k === 'vars') renderVars();
+    else if (k === 'mem') renderMem();
     else if (k === 'save') { /* 入口按钮在面板里，见 open-saves */ }
     else if (k === 'debug') renderDebug();
     else if (k === 'net') renderNetBoxes();
@@ -2754,11 +2768,14 @@
           '<label class="kt-sw"><input type="checkbox" data-rtog="' + esc(key) + '"' +
           (r.disabled ? '' : ' checked') + (r.skip ? ' disabled' : '') + '></label>' +
           '<div class="kt-i-main"><div class="kt-i-t"><em class="tag role">' + (SRC[r.source] || r.source) +
-          '</em>' + esc(r.name) + '</div><div class="kt-i-s">' + esc(note) + '</div></div></div>';
+          '</em>' + esc(r.name) + '</div><div class="kt-i-s">' + esc(note) + '</div></div>' +
+          (r.source === 'user' ? '<button class="kt-btn rx-del" data-rxdel="' + esc(r.name) + '" title="删掉这条导入的正则">删除</button>' : '') +
+          '</div>';
       }).join('') + '</div></section>';
   }
 
   function renderPreset() {
+    if (!$('pre-list')) return;          // 手机还没建（开场引导里导入正则时会走到这）
     if (!eng.preset) {
       $('pre-stat').innerHTML = '<span class="warn">还没载入预设。</span>';
       $('pre-list').innerHTML = regexSection();
@@ -2837,8 +2854,14 @@
       '<div class="kt-field"><label>替换为</label><textarea rows="3" readonly id="rx-rep"></textarea></div>' +
       '<div class="kt-field"><label>试跑：贴一段模型原文（调试面板「模型原文」里复制）</label>' +
       '<textarea rows="6" id="rx-sample"></textarea></div>' +
-      '<div class="kt-field"><label id="rx-stat">结果</label><textarea rows="6" readonly id="rx-out"></textarea></div></div>';
+      '<div class="kt-field"><label id="rx-stat">结果</label><textarea rows="6" readonly id="rx-out"></textarea></div>' +
+      (r.source === 'user' ? '<button class="kt-btn kt-btn-wide" id="rx-del-one">删掉这条导入的正则</button>' : '') + '</div>';
     $('rx-find').value = r.find; $('rx-rep').value = r.rep;
+    if ($('rx-del-one')) $('rx-del-one').onclick = function () {
+      if (!confirm('删掉导入的正则「' + r.name + '」？')) return;
+      deleteUserRegex([r.name]); preOpen = true;
+      $('pre-split').classList.remove('show-edit');
+    };
     $('rx-sample').value = lastRaw || '';
     function go() {
       var res = GalRegex.dryRun(r, $('rx-sample').value, { charName: eng.card && (eng.card.data || eng.card).name,
@@ -3593,6 +3616,7 @@
       history: eng.history, vars: eng.vars, log: eng.log,
       phoneSent: eng.phoneSent, phoneSeq: eng.phoneSeq,
       macroVars: eng.macroVars || {},
+      memory: eng.memory || null,
       cursor: qi, opening: currentOpening, runId: runId,
       /* 存档树 */
       type: o.type || 'latest',
@@ -3673,6 +3697,7 @@
     eng.phoneSent = sv.phoneSent || [];
     eng.phoneSeq = sv.phoneSeq || 0;
     eng.macroVars = sv.macroVars || {};
+    eng.memory = Memory.norm(deepCopy(sv.memory) || Memory.fresh());
     currentOpening = sv.opening || null;
     /* 接着往下玩时，自动存档要落回同一个周目的槽，不能另起一个 */
     runId = (sv.tree && sv.tree.rootId) || sv.runId ||
@@ -4501,6 +4526,8 @@
       (loaded.preset ? PromptBuilder.parsePreset(eng.preset).order.length : 0) + '</b> 块' +
       (rx.length ? ' ｜ 正则 <b>' + rx.length + '</b> 条' +
         '<span class="dim">（预设自带 ' + rxP + (rxU ? ' · 导入 ' + rxU : '') + '，默认按它们自己的开关启用）</span>' : '') +
+      (eng.userRegex && eng.userRegex.length ? ' <button type="button" class="linkbtn" id="rx-clear">删掉导入的 ' +
+        eng.userRegex.length + ' 条正则</button>' : '') +
       (thN ? ' ｜ <span class="dim">酒馆助手脚本 ' + thN + ' 个（JS，不运行）</span>' : '') +
       (loaded.card ? '' : ' <span class="warn">— 还缺角色卡</span>');
     /* 从卡里抽出来多少立绘 —— 这是用户最关心的一件事（"我的图呢"），
@@ -4519,6 +4546,10 @@
       }
     }
     $('assets-note').innerHTML = html;
+    if ($('rx-clear')) $('rx-clear').onclick = function () {
+      if (!confirm('删掉全部单独导入的正则（' + eng.userRegex.length + ' 条）？预设和卡自带的不受影响。')) return;
+      toast('已删掉 ' + deleteUserRegex(null) + ' 条导入的正则', 'ok', 3000);
+    };
     $('btn-start').disabled = !loaded.card;
     if (typeof renderBoot === 'function') renderBoot();
     /* 自定义开场的舰娘和场景都从卡里来：卡一载入就重画 */
@@ -4551,6 +4582,27 @@
     var list = GalStore.local('gal_user_regex');
     eng.setUserRegex(Array.isArray(list) ? list : []);
     eng.regexOff = GalStore.local('gal_regex_off') || {};
+  }
+  /**
+   * 删掉单独导入的正则（v5.26：以前只能关，不能删）。
+   * @param {string[]|null} names 要删的正则名（scriptName）；null = 全删
+   */
+  function deleteUserRegex(names) {
+    function nm(x) { return x.scriptName || x.script_name || x.name || '(无名正则)'; }
+    var cur = GalStore.local('gal_user_regex') || [];
+    var left = names ? cur.filter(function (x) { return names.indexOf(nm(x)) < 0; }) : [];
+    GalStore.local('gal_user_regex', left);
+    /* 开关表里它们的记录也清掉，免得以后导入同名的继承了旧开关 */
+    var off = GalStore.local('gal_regex_off') || {};
+    Object.keys(off).forEach(function (k) {
+      if (k.indexOf('user:') === 0 && (!names || names.indexOf(k.slice(5)) >= 0)) delete off[k];
+    });
+    GalStore.local('gal_regex_off', off);
+    loadUserRegex();
+    if (!left.length) $('f-regex').parentNode.classList.remove('ok');
+    noteAssets();
+    if (typeof renderPreset === 'function') renderPreset();
+    return cur.length - left.length;
   }
   $('f-regex').onchange = function () {
     var files = Array.prototype.slice.call(this.files || []);
@@ -4686,6 +4738,114 @@
       toast('小手机这一轮没更新：' + String(e.message || e).split('\n')[0] +
         '（正文不受影响）', 'warn', 7000);
     }).then(function () { peBusy = false; });
+  }
+
+  /* ============================================================
+     长期记忆（v5.26，逻辑在 core/memory.js，请求在 Engine.memoryTick）
+     ============================================================ */
+  function memCfg() { return Memory.cfgOf(GalStore.local('gal_memory_cfg') || {}); }
+  function saveMemCfg(patch) {
+    var c = Object.assign(memCfg(), patch || {});
+    GalStore.local('gal_memory_cfg', c);
+    eng.memCfg = c;
+    return c;
+  }
+  eng.memCfg = memCfg();
+  /** 总结用哪条通道：选了副 API 而且副 API 填全了就走副 API，否则主 API */
+  function memSend(msgs, params) {
+    var q = memCfg().via === 'sub' ? GalAPI.quietConfig() : null;
+    return GalAPI.chatWithRetry(msgs, { params: params, retries: 1, config: q || undefined });
+  }
+  var memBusy = false;
+  /** @param {boolean} [now] 「现在整理」：不够一块也整理 */
+  function memoryAfterTurn(now) {
+    if (!now && !memCfg().enabled) return Promise.resolve(null);
+    if (memBusy) return Promise.resolve(null);
+    memBusy = true;
+    var myRun = runId;
+    if (now) toast('正在整理记忆…', 'ok', 3000);
+    return eng.memoryTick({ send: memSend, now: !!now, userName: Editors.loadPersona().name || '指挥官' })
+      .then(function (r) {
+        if (runId !== myRun) return r;
+        if (r.added || r.merged) {
+          autosave({ skipNode: true });
+          console.info('[记忆] 新整理 ' + r.added + ' 块' + (r.merged ? '，合并了 ' + r.merged + ' 块' : ''));
+        } else if (now) toast('没有需要整理的：原文还在保留轮数以内。', 'ok', 4000);
+        if (curSec === 'mem') renderMem();
+        return r;
+      }).catch(function (e) {
+        toast('记忆整理失败：' + String(e.message || e).split('\n')[0] + '（正文不受影响，下一轮再试）', 'warn', 7000);
+      }).then(function (r) { memBusy = false; return r; });
+  }
+
+  function renderMem() {
+    var host = $('mem-host'); if (!host) return;
+    var c = memCfg();
+    eng.memory = Memory.norm(eng.memory);
+    var main = Memory.mainHist(eng.history);
+    Memory.prune(eng.memory, main);
+    var cs = eng.memory.chunks;
+    var cov = Memory.covered(eng.memory, main);
+    var turns = Memory.turnAt(main, main.length), covT = Memory.turnAt(main, cov);
+    var chars = cs.reduce(function (n, x) { return n + x.text.length; }, 0);
+    function opt(v, cur, t) { return '<option value="' + v + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + t + '</option>'; }
+    /* 存的值不在下拉里（手改过配置）也要列出来，不然显示成第一项、一改就丢 */
+    function nums(list, cur) { return list.indexOf(cur) >= 0 ? list : list.concat([cur]).sort(function (a, b) { return a - b; }); }
+    host.innerHTML =
+      '<div class="kt-sec"><h4>长 期 记 忆</h4>' +
+      '<div class="kt-row"><span class="kt-label">自动整理更早的剧情</span><label class="kt-sw"><input type="checkbox" id="mem-on"' + (c.enabled ? ' checked' : '') + '></label></div>' +
+      '<div class="kt-hint">玩久了模型记不住前面的事、越写越糊，多半是因为更早的原文被截掉了、留下的又太长。' +
+        '打开后：最近几轮原文照发，更早的每攒够几轮就让模型总结成要点，放在对话前面一起发 —— 前面发生的事不会丢，提示词也不会越来越长。</div>' +
+      '<div class="grid2 mem-grid">' +
+        '<div class="kt-field"><label>原文保留最近</label><select id="mem-keep">' +
+          nums([6, 8, 10, 12, 16, 20, 30], c.keepTurns).map(function (n) { return opt(n, c.keepTurns, n + ' 轮'); }).join('') + '</select></div>' +
+        '<div class="kt-field"><label>每攒够几轮整理一次</label><select id="mem-chunk">' +
+          nums([3, 4, 6, 8, 10], c.chunkTurns).map(function (n) { return opt(n, c.chunkTurns, n + ' 轮'); }).join('') + '</select></div>' +
+        '<div class="kt-field"><label>记忆总长到多少字就压缩</label><select id="mem-max">' +
+          nums([2000, 3600, 6000, 9000], c.maxChars).map(function (n) { return opt(n, c.maxChars, n + ' 字'); }).join('') + '</select></div>' +
+        '<div class="kt-field"><label>整理用哪个接口</label><select id="mem-via">' +
+          opt('main', c.via, '主 API（推荐，总结得准）') + opt('sub', c.via, '副 API（省钱）') + '</select></div>' +
+      '</div>' +
+      '<div class="kt-hint" id="mem-stat">现在第 ' + turns + ' 轮 · 已整理到第 ' + covT + ' 轮 · 记忆 ' + cs.length + ' 块 ' + chars + ' 字' +
+        (c.via === 'sub' && !GalAPI.subReady() ? ' · <span class="warn">副 API 没填全，先用主 API</span>' : '') + '</div>' +
+      '<div class="kt-acts"><button class="kt-btn" id="mem-now">现在整理</button>' +
+        '<button class="kt-btn" id="mem-clear"' + (cs.length ? '' : ' disabled') + '>清空记忆</button></div></div>' +
+      '<div class="kt-sec"><h4>备 忘 · 永 远 记 住</h4>' +
+      '<div class="kt-field"><textarea id="mem-notes" rows="4" placeholder="自己写：约定、重要设定、不能忘的事。例如：答应了柴郡周末去海边；Z23 知道了我的真实身份。">' + esc(eng.memory.notes) + '</textarea></div>' +
+      '<div class="kt-hint">每一轮都会带上（记忆开关关着也带）。写完点别处就存。</div></div>' +
+      '<div class="kt-sec"><h4>记 忆 内 容</h4>' +
+      (cs.length ? cs.map(function (x, i) {
+        return '<div class="mem-c" data-i="' + i + '"><div class="mem-h"><b>' + (x.merged ? '前情提要 · ' : '') + '第 ' + x.fromTurn + '～' + x.toTurn + ' 轮</b>' +
+          '<span>' + x.text.length + ' 字</span><button class="kt-btn mem-del" data-mdel="' + i + '">删除</button></div>' +
+          '<textarea rows="5" data-medit="' + i + '">' + esc(x.text) + '</textarea></div>';
+      }).join('') + '<div class="kt-hint">总结得不对可以直接改，点别处就存。删除一块会连同它后面的块一起作废（记忆要连续），下一轮重新整理。</div>'
+        : '<div class="kt-empty">还没有记忆。原文超过「保留轮数 + 一次整理的轮数」后会自动整理。</div>') +
+      '</div>';
+    $('mem-on').onchange = function () { saveMemCfg({ enabled: this.checked }); renderMem(); };
+    $('mem-keep').onchange = function () { saveMemCfg({ keepTurns: +this.value }); renderMem(); };
+    $('mem-chunk').onchange = function () { saveMemCfg({ chunkTurns: +this.value }); renderMem(); };
+    $('mem-max').onchange = function () { saveMemCfg({ maxChars: +this.value }); renderMem(); };
+    $('mem-via').onchange = function () { saveMemCfg({ via: this.value }); renderMem(); };
+    $('mem-now').onclick = function () { memoryAfterTurn(true); };
+    $('mem-clear').onclick = function () {
+      if (!confirm('清空全部记忆块？（备忘不动）之后会从头重新整理。')) return;
+      eng.memory.chunks = []; autosave({ skipNode: true }); renderMem();
+    };
+    $('mem-notes').onchange = function () { eng.memory.notes = this.value; autosave({ skipNode: true }); };
+    PA('#mem-host [data-medit]').forEach(function (ta) {
+      ta.onchange = function () {
+        var x = eng.memory.chunks[+ta.getAttribute('data-medit')];
+        if (x) { x.text = ta.value.trim(); autosave({ skipNode: true }); }
+      };
+    });
+    PA('#mem-host [data-mdel]').forEach(function (b) {
+      b.onclick = function () {
+        var i = +b.getAttribute('data-mdel');
+        if (!confirm('删除这一块（以及它后面的 ' + (eng.memory.chunks.length - i - 1) + ' 块）？')) return;
+        eng.memory.chunks = eng.memory.chunks.slice(0, i);
+        autosave({ skipNode: true }); renderMem();
+      };
+    });
   }
 
   function subNote() {
@@ -4983,6 +5143,7 @@
     eng.log = [];
     eng.phoneSent = [];
     eng.phoneSeq = 0;        // 忘了清它，新周目的手机消息会接着上一局的编号往上加
+    eng.memory = Memory.fresh();
     if (pick) eng.seedVarsFromOpening(pick.t);   // 开局先把地点/时段/在场角色填好
     enterGame();
     updateTurnUI();
@@ -5024,6 +5185,7 @@
     currentOpening = '自定义开场' + (spec.eventTitle ? '·' + spec.eventTitle : '');
     runId = newRunId(); activeNode = null; turnStack = [];
     eng.macroVars = {}; eng.history = []; eng.log = []; eng.phoneSent = []; eng.phoneSeq = 0;
+    eng.memory = Memory.fresh();
     peTurns = 0;
     eng.vars = Opening.vars(spec);
     enterGame();
@@ -5137,6 +5299,7 @@
     turnStack: function () { return turnStack; },
     activeNode: function () { return activeNode; },
     submit: function (t) { return submit(t); },
+    memoryNow: function () { return memoryAfterTurn(true); },
     setDevice: setDevice, setOrient: setOrient, setTbHidden: setTbHidden,
     stageFor: stageFor, phoneBack: phoneBack
   };

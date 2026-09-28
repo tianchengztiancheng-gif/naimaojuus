@@ -966,3 +966,8 @@ html:not(.m-mobile) .m-only{display:none}
 #boot .boot-sub{margin-top:18px;padding-top:14px;border-top:1px solid rgba(120,200,230,.16)}
 #boot .boot-sub h4{font-size:13px;letter-spacing:.12em;color:#8fb3c7;margin:0 0 10px;font-weight:600}
 #boot .boot-sub .dim{font-size:12px;color:#68889e;line-height:1.7;margin:-4px 0 12px}
+
+/* ---- 删掉导入的正则（v5.26） ---- */
+#boot .linkbtn{background:none;border:0;padding:0 2px;margin-left:6px;color:#ff9f9f;font:inherit;font-size:.92em;
+  text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+#boot .linkbtn:hover{color:#ffc4c4}

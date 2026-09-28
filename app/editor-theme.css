@@ -377,3 +377,21 @@
   color:rgb(var(--sub))}
 #jup-root .sv-note.ok, .sv-note.ok{color:rgb(var(--ok))}
 #jup-root .sv-note.bad, .sv-note.bad{color:rgb(var(--bad))}
+
+/* ---- 正则：导入的可以删（v5.26） ---- */
+#jup-root .kt-item .rx-del{flex:none;min-height:30px;padding:0 10px;font-size:12px;opacity:.75}
+#jup-root .kt-item .rx-del:hover{opacity:1;color:#ff9a9a;border-color:rgba(255,120,120,.5)}
+
+/* ---- 记忆（v5.26） ---- */
+#jup-root .mem-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+#jup-root .mem-grid .kt-field{min-width:0}
+#jup-root .mem-grid select{width:100%}
+#jup-root #mem-stat{margin:6px 0 10px}
+#jup-root .mem-c{border:1px solid rgba(var(--acc),.18);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:rgba(0,0,0,.12)}
+#jup-root .mem-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+#jup-root .mem-h b{flex:1;font-size:13px;color:rgb(var(--acc))}
+#jup-root .mem-h span{font-size:12px;opacity:.6}
+#jup-root .mem-h .mem-del{min-height:28px;padding:0 10px;font-size:12px}
+#jup-root .mem-c textarea{width:100%;box-sizing:border-box;font-size:13px;line-height:1.6;resize:vertical}
+@media (max-width:560px){ #jup-root .mem-grid{grid-template-columns:1fr} }
+#jup-root #mem-host .kt-acts{margin-bottom:18px}

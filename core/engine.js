@@ -49,6 +49,8 @@
     this.cardRegex = [];        // 卡自带的正则（按酒馆语义，给提示词用）
     this.presetRegex = [];      // 预设自带的正则
     this.userRegex = [];        // 玩家单独导入的正则
+    this.memory = global.Memory ? global.Memory.fresh() : { chunks: [], notes: '' };   // 长期记忆（v5.26）
+    this.memCfg = null;         // 记忆设置，app 里填；null = 用 Memory.DEFAULTS
     this.regexOff = {};         // 玩家在界面上手动开关过的：{ 'preset:名字': true=关 / false=开 }
     this.lastReasoning = null;  // 上一轮剥思维链的情况，界面据此提示「被截断在思维链里」
     this.history = [];
@@ -280,13 +282,54 @@
     return { raw: raw, count: n };
   };
 
+  /* ============================================================
+     长期记忆（v5.26，逻辑在 core/memory.js）
+     每轮之后看一眼：没覆盖的原文够一块了就让模型总结一块；块太多了就合并最早的几块。
+     ============================================================ */
+  /**
+   * @param {object} opt { send, now:true=不够一块也整理（「现在整理」）, max:最多整理几块, userName }
+   * @returns {Promise<{added:number, merged:number}>}
+   */
+  Engine.prototype.memoryTick = async function (opt) {
+    opt = opt || {};
+    var M = global.Memory; if (!M) return { added: 0, merged: 0 };
+    this.memory = M.norm(this.memory);
+    var main = M.mainHist(this.history);
+    M.prune(this.memory, main);
+    var added = 0, merged = 0, max = opt.max || 3;
+    var po = { userName: opt.userName || this.cfg.userName || '指挥官', order: this.cfg.scriptOrder };
+    while (added < max) {
+      var r = opt.now ? M.planNow(this.memory, main, this.memCfg) : M.plan(this.memory, main, this.memCfg);
+      if (!r) break;
+      var raw = await this.quiet(M.summaryPrompt(this.memory, main, r, po), { send: opt.send, maxTokens: 900, temperature: 0.3 });
+      var c = M.makeChunk(main, r, raw);
+      if (!c.text) throw new Error('总结回来是空的');
+      /* 请求期间玩家撤回 / 读档了：这一块对不上了就不要 */
+      var now = M.mainHist(this.history);
+      if (now.length < r.to || M.sig(now[r.to - 1]) !== c.sig || M.covered(this.memory, now) !== r.from) break;
+      this.memory.chunks.push(c); added++;
+      main = now;
+    }
+    var mp = M.mergePlan(this.memory, this.memCfg);
+    if (mp) {
+      var pick = this.memory.chunks.slice(0, mp.n);
+      var mraw = await this.quiet(M.mergePrompt(pick, po), { send: opt.send, maxTokens: 1200, temperature: 0.3 });
+      if (M.cleanOut(mraw) && this.memory.chunks[0] === pick[0]) { M.applyMerge(this.memory, mp.n, mraw); merged = mp.n; }
+    }
+    return { added: added, merged: merged };
+  };
+
   /** 只组装不发送——干跑，用来检视会发出去什么 */
   Engine.prototype.dryRun = function (userText, opt) {
     opt = opt || {};
     /* 手机独立生成产生的记录不当成主线对话发回去 ——
        它们会以 <手机记录> 的形式被压缩注入，避免重复又省 token */
-    var hist = this.history.filter(function (m) { return !m.phoneOnly; })
-                           .slice(-this.cfg.historyLimit);
+    var main = this.history.filter(function (m) { return !m.phoneOnly; });
+    /* 开了长期记忆：更早的剧情由记忆块代替，这里只发记忆没覆盖到的原文（封顶）；没开就是老的「最近 N 条」 */
+    var hist = global.Memory ? global.Memory.windowOf(this.memory, main, this.memCfg, this.cfg.historyLimit)
+                             : main.slice(-this.cfg.historyLimit);
+    var memText = global.Memory && global.Memory.cfgOf(this.memCfg).enabled
+      ? global.Memory.render(this.memory, main) : (global.Memory ? global.Memory.render({ chunks: [], notes: (this.memory || {}).notes }, main) : '');
     var scanHist = hist.concat(userText ? [{ role: 'user', content: userText }] : []);
 
     var wb = global.Worldbook.activate(this.mainPool(), scanHist, {
@@ -311,6 +354,7 @@
       charName: opt.charName || (this.card && (this.card.data || this.card).name),
       userName: opt.userName || '指挥官',
       personaDescription: opt.persona || '',
+      memory: memText,
       macroVars: this.macroVars || (this.macroVars = {}),
       model: this.cfg.model || (global.GalAPI && global.GalAPI.loadConfig().model) || '',
       /* opt.extraHint：只对这一次请求有效的附加要求（重roll 时的「换一种写法」） */
