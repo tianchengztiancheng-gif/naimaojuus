@@ -1165,6 +1165,24 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
   原因取 `GalAPI.lastFinish`。其它错误（401、网络）不重问直接抛。app 里 `memErr / memErrToasted`：连续失败只弹一次，设置 · 记忆显示原因和办法。
 - 测试：`tools/e2e-memory.mjs`（30），`tools/unit/test-memory.mjs`（40），冒烟 [7i]；设置分区数 10 → 11（冒烟 `侧栏分区`）。
 
+## 七·十九、自定义立绘 / 回看显示玩家的话 / 评论存档（v5.27）
+
+- **自定义立绘**（`core/customsprites.js`）：数据 `{chars:{角色:{服装:{表情:[url]}}}}`，存 `GalStore` 键 `custom_sprites`（IndexedDB）。
+  `apply()` 就地改 `RESOURCE.characters`：新角色建对象（第一套服装当 default_outfit）；已有角色同格覆盖、记 `prev`；新服装整套加。
+  每条改动记着当时的角色对象 `obj`，`unapply()` 只还原对象没被换掉的 —— 载卡（`CardRes.apply` 用 Object.assign 把卡里的角色整个换成新对象）
+  之后 `Engine.loadCard` 调 `forget()`（= unapply）+ `apply()`：被卡换掉的不用还原，新角色 / 预置素材包里的角色照常还原，不会留下鬼影。
+  `note()` 进 `dryRun` 的 extraSystem（`<自定义立绘>` 列出角色的服装和表情）。app 启动时 `CustomSprites.load().then(apply)`。
+  界面：设置分区 `spr`（`renderSpr()`）；本地图 `fileToSprite()` 画到 canvas 压成长边 1800 的 webp（gif < 3MB 原样）。
+  改完 `sprChanged()`：apply、清舞台重画当前句、存。导出 / 导入 `{type:'gal-custom-sprites', chars}`，导入时过滤非 http(s) / data:image 的地址。
+- **回看显示玩家的话**：`submit()` 里 `res.modules[0].said = opt.said || userText`（跟着 eng.log 进存档、跟着重roll 版本走；
+  自定义开场的 AI 指令传 `said: '（按自定义开场的设定写开场）'`）。`renderHistory()` 用 `histSaid()`：有 said 用 said；
+  老存档按「第 k 个 turn>0 的轮次 ↔ 主线第 k 句 user」对，数量对不上就不显示。
+- **评论消失**：`Phone.scan()` 每次重新生成帖子对象，以前 `sendComment()` 把评论 push 到 `curPost.cmts`（临时对象）上，退出就没。
+  现在评论存 `eng.phoneSent`：`{kind:'cmt', post: 帖子 id, who, text, mine}`，`scan()` 按 id 挂回去并给 comments 计数 +1；
+  私聊分桶那段跳过带 `kind` 的记录。发完 `autosave()`。
+- 测试：`tools/e2e-custom.mjs`（23；中文文件名的上传用 buffer 传，这台环境里 setInputFiles 传中文路径会静默失败），
+  `tools/unit/test-customsprites.mjs`（33，含评论挂回），冒烟 [7j]；设置分区数 → 12。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

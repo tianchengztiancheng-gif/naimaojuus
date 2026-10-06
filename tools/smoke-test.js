@@ -46,7 +46,7 @@ const FILES = [
   'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'app/app.js'
+  'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'core/customsprites.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -148,7 +148,7 @@ console.log('\n[5] App 页面');
   ok('页 ' + k, !!q('.ph-layer[data-app="' + k + '"]'));
 });
 run(() => q('.ph-app[data-app="cfg"]').click(), '打开设置');
-ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 11,
+ok('侧栏分区', qa('.kt-nav button[data-sec]').length === 12,
    qa('.kt-nav button[data-sec]').length + ' 个');
 ok('外观滑块搬进来了', !!q('#tune-host input[type=range]'));
 ok('旧侧栏已移除', !d.getElementById('history') && !d.getElementById('saves'));
@@ -1407,6 +1407,18 @@ console.log('\n[7i] 长期记忆 + 删掉导入的正则（v5.26）');
      (src.match(/eng\.memory = Memory\.fresh\(\)/g) || []).length >= 2 && /eng\.memory = Memory\.norm\(deepCopy\(sv\.memory\)/.test(src));
   ok('导入的正则在资源说明里有「删掉」按钮', /deleteUserRegex\(null\)/.test(src) && /id="rx-clear"/.test(src));
   ok('正则列表里导入的那几条有「删除」', /data-rxdel=/.test(src) && /id="rx-del-one"/.test(src));
+}
+
+console.log('\n[7j] 自定义立绘 / 回看显示玩家的话 / 评论存档（v5.27）');
+{
+  const $ = id => d.getElementById(id), src = fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8');
+  ok('CustomSprites 加载了', !!w.CustomSprites && typeof w.CustomSprites.apply === 'function');
+  d.querySelector('.kt-nav button[data-sec="spr"]').click();
+  ok('设置里有「自定义立绘」：角色 / 服装 / 表情 / 选图 / 贴地址 / 导入导出', !!$('spr-name') && !!$('spr-outfit') && !!$('spr-expr') &&
+     !!$('spr-file') && !!$('spr-url') && !!$('spr-export') && !!$('spr-import'));
+  ok('载卡后重新合一次自定义立绘', /CustomSprites\.forget\(\); global\.CustomSprites\.apply\(\)/.test(fs.readFileSync(path.join(ROOT, 'core/engine.js'), 'utf8')));
+  ok('回看里每轮显示玩家的话', /res\.modules\[0\]\.said = opt\.said \|\| userText/.test(src) && /histline me/.test(src));
+  ok('动态评论存进 phoneSent', /kind: 'cmt', post: post\.id/.test(src));
 }
 
 console.log('\n[8] 运行期未捕获错误');

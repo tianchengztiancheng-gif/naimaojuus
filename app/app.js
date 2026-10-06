@@ -1475,6 +1475,8 @@
       });
       lastResult = res;
       lastRaw = res.raw || res.text;
+      /* 玩家这一轮说的话记在这一轮第一句上（跟着日志进存档、跟着重roll 的版本走），回看里显示 */
+      if (res.modules && res.modules[0]) res.modules[0].said = opt.said || userText;
       warnAfterTurn(res);
       await waitImages(res.modules);
       var startIdx = play(res.modules);
@@ -2008,6 +2010,7 @@
     { k:'mem',   t:'记忆',     d:'长期记忆与备忘' },
     { k:'save',  t:'存读档',   d:'进度存取' },
     { k:'tune',  t:'外观',     d:'立绘与对话框' },
+    { k:'spr',   t:'自定义立绘', d:'加自己的立绘' },
     { k:'img',   t:'文生图',   d:'NovelAI 出图与 CG' },
     { k:'net',   t:'图片网络', d:'图裂了看这里' },
     { k:'debug', t:'调试',     d:'请求与兜底告警' },
@@ -2061,7 +2064,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.26.1</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.27</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -2115,6 +2118,7 @@
 
     vars:  '<div class="kt-pane-bd pad" id="varsbody"></div>',
     mem:   '<div class="kt-pane-bd pad" id="mem-host"></div>',
+    spr:   '<div class="kt-pane-bd pad" id="spr-host"></div>',
     save:  '<div class="kt-pane-bd pad">' +
       '<div class="kt-sec"><h4>存 读 档</h4>' +
       '<p class="kt-hint">存档现在是一棵树：每一轮自动存一个节点，读旧节点接着玩会长出分支。' +
@@ -2376,7 +2380,7 @@
     openSection('me');
   }
 
-  var SEC_ICON = { me:'🪪', book:'📚', pre:'🧩', vars:'📊', mem:'🧠',
+  var SEC_ICON = { me:'🪪', book:'📚', pre:'🧩', vars:'📊', mem:'🧠', spr:'🧍',
                    save:'💾', tune:'🎚', img:'🎨', net:'🖼', debug:'🔧', api:'⚙' };
 
   function openSection(k) {
@@ -2413,6 +2417,7 @@
     else if (k === 'me') renderPersona();
     else if (k === 'vars') renderVars();
     else if (k === 'mem') renderMem();
+    else if (k === 'spr') renderSpr();
     else if (k === 'save') { /* 入口按钮在面板里，见 open-saves */ }
     else if (k === 'debug') renderDebug();
     else if (k === 'net') renderNetBoxes();
@@ -3105,15 +3110,23 @@
     if (!txt) return;
     ci.value = '';
     var me = GalStore.local('gal_username') || '指挥官';
-    curPost.cmts.push({ who: me, text: txt, mine: true });
-    openPost(curPost);
+    var post = curPost;
+    /* 评论存进 phoneSent（跟着存档走），扫描时按帖子 id 挂回去；当前打开的这份也顺手加上，马上看得到 */
+    function addCmt(who, text, mine) {
+      eng.phoneSent.push({ kind: 'cmt', post: post.id, who: who, text: text, mine: !!mine,
+        turn: eng.history.length });
+      post.cmts.push({ who: who, text: text, mine: !!mine });
+      post.comments = String((parseInt(post.comments, 10) || 0) + 1);
+    }
+    addCmt(me, txt, true);
+    openPost(post);
 
     phoneBusy = true;
     try {
       var prompt = '[独立任务 · 动态评论区，忽略之前的角色扮演格式]\n' +
-        '这是 @' + curPost.author + ' 发的动态「' + curPost.title + '」：\n' +
-        String(curPost.body || '').slice(0, 300) + '\n\n' +
-        '已有评论：\n' + (curPost.cmts.map(function (c) {
+        '这是 @' + post.author + ' 发的动态「' + post.title + '」：\n' +
+        String(post.body || '').slice(0, 300) + '\n\n' +
+        '已有评论：\n' + (post.cmts.map(function (c) {
           return c.who + '：' + c.text; }).join('\n') || '（还没有）') + '\n\n' +
         '指挥官刚评论了「' + txt + '」。生成 1~3 条新回复，' +
         '可以是发帖人本人回，也可以是别的角色插话，按各自性格说话，口语短句。\n' +
@@ -3124,20 +3137,28 @@
       var re = /\[评论\|([^|\]\n]*)\|([^\]\n]*)\]/g, m;
       var got = 0;
       while ((m = re.exec(raw || ''))) {
-        curPost.cmts.push({ who: m[1].trim(), text: m[2].trim() });
+        addCmt(m[1].trim(), m[2].trim(), false);
         got++;
       }
       if (!got) {
         var plain = String(raw || '').replace(/<[^>]*>/g, '').trim().slice(0, 120);
-        if (plain) curPost.cmts.push({ who: curPost.author, text: plain });
+        if (plain) addCmt(post.author, plain, false);
       }
-      curPost.comments = (parseInt(curPost.comments, 10) || 0) + 1 + got;
     } catch (e) {
-      curPost.cmts.push({ who: '系统', text: '（评论没发出去：' +
+      /* 失败提示只给这一次看，不存 */
+      post.cmts.push({ who: '系统', text: '（评论没发出去：' +
         String(e.message || e).split('\n')[0] + '）' });
     } finally {
       phoneBusy = false;
-      openPost(curPost);
+      autosave();
+      if (typeof renderPhone === 'function') renderPhone();
+      /* 等回复的时候退出又点进了同一条：curPost 已经是重新扫描出来的那份，换成最新的再画一遍 */
+      var pd = P('.postd');
+      if (curPost && curPost.id === post.id && pd && pd.classList.contains('on')) {
+        var fresh = curPost === post ? post
+          : (phoneData().posts.filter(function (x) { return x.id === post.id; })[0] || curPost);
+        openPost(fresh);
+      }
     }
   }
 
@@ -3196,6 +3217,26 @@
      ============================================================ */
   var openTurns = {};          // 哪几轮是展开的
 
+  /**
+   * 每一轮玩家说了什么：{turn: text}。
+   * v5.27 起记在每轮第一句的 said 上；更早的存档没有，就按「第几个有剧情的轮次 ↔ 主线里第几句玩家发言」对一下，
+   * 两边数目对不上就不猜（宁可不显示也别张冠李戴）。
+   */
+  function histSaid(turns) {
+    var out = {}, any = false;
+    turns.forEach(function (t) {
+      var m = t.lines[0].m;
+      if (m.said) { out[t.turn] = m.said; any = true; }
+    });
+    if (any) return out;
+    var users = eng.history.filter(function (m) { return !m.phoneOnly && m.role === 'user'; });
+    var played = turns.filter(function (t) { return t.turn > 0; });
+    if (users.length && users.length === played.length && turns[0] && turns[0].turn === 0) {
+      played.forEach(function (t, i) { out[t.turn] = String(users[i].content || ''); });
+    }
+    return out;
+  }
+
   function renderHistory() {
     var box = $('histlist');
     if (!box) return;
@@ -3209,10 +3250,13 @@
     });
     var curTurn = eng.log[qi] ? eng.log[qi].turn : null;
     if (curTurn != null && openTurns[curTurn] === undefined) openTurns[curTurn] = true;
+    var saidOf = histSaid(turns);
+    var meName = Editors.loadPersona().name || GalStore.local('gal_username') || '指挥官';
 
     box.innerHTML = turns.map(function (t) {
       var open = !!openTurns[t.turn];
       var first = t.lines[0].m;
+      var said = saidOf[t.turn] || '';
       var speakers = [];
       t.lines.forEach(function (x) {
         if (!x.m.narration && speakers.indexOf(x.m.who) < 0) speakers.push(x.m.who);
@@ -3224,9 +3268,11 @@
         '<span class="tp">' + esc(speakers.slice(0, 3).join('、') || '旁白') +
         (speakers.length > 3 ? ' 等' : '') + '</span>' +
         (curTurn === t.turn ? '<span class="tc">当前</span>' : '') +
-        '<div class="tsum">' + esc(first.text.slice(0, 40)) + '…</div></div>';
+        '<div class="tsum">' + (said ? '<i class="tme">' + esc(meName) + '：</i>' + esc(said.slice(0, 36)) + (said.length > 36 ? '…' : '')
+                                     : esc(first.text.slice(0, 40)) + '…') + '</div></div>';
       if (!open) return head;
-      return head + '<div class="tbody">' + t.lines.map(function (x) {
+      return head + '<div class="tbody">' + (said ? '<div class="histline me" data-jump="' + t.from + '">' +
+          '<b>' + esc(meName) + '</b><span>' + esc(said) + '</span></div>' : '') + t.lines.map(function (x) {
         return '<div class="histline' + (x.m.narration ? ' narr' : '') +
           (x.i === qi ? ' on' : '') + '" data-jump="' + x.i + '">' +
           '<b>' + esc(x.m.narration ? '旁白' : x.m.who) + '</b>' +
@@ -4860,6 +4906,171 @@
     });
   }
 
+  /* ============================================================
+     自定义立绘（v5.27，数据和合并逻辑在 core/customsprites.js）
+     ============================================================ */
+  var sprForm = { name: '', outfit: '', expr: '' };
+  /** 本地图片 → 压成长边不超过 1800 的 webp（保留透明）；gif 原样留着（压了就不动了） */
+  function fileToSprite(file) {
+    return new Promise(function (resolve, reject) {
+      if (/gif$/i.test(file.type) && file.size < 3 * 1024 * 1024) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { reject(new Error('读不了这个文件')); };
+        fr.readAsDataURL(file); return;
+      }
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var k = Math.min(1, 1800 / Math.max(w, h));
+        var cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url);
+        var out = cv.toDataURL('image/webp', 0.9);
+        if (out.indexOf('data:image/webp') !== 0) out = cv.toDataURL('image/png');
+        resolve(out);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('「' + file.name + '」不是能用的图片')); };
+      img.src = url;
+    });
+  }
+  /** 改完立绘：存起来、合进素材表、舞台上正在演的这句重画一下 */
+  function sprChanged() {
+    CustomSprites.apply();
+    if (eng.log.length && $('boot').classList.contains('gone')) {
+      live.forEach(function (r) { r.el.remove(); }); live.clear(); stageNow = [];
+      goTo(qi, { instant: true });
+    }
+    renderSpr();
+    if (typeof renderOpc === 'function' && typeof OPC !== 'undefined' && OPC.mode === 'custom') renderOpc();
+    return CustomSprites.save().catch(function (e) { toast('立绘没存上：' + (e.message || e), 'bad', 8000); });
+  }
+  function sprFormVals() {
+    sprForm.name = ($('spr-name').value || '').trim();
+    sprForm.outfit = ($('spr-outfit').value || '').trim();
+    sprForm.expr = ($('spr-expr').value || '').trim();
+    return sprForm;
+  }
+  function sprDatalists() {
+    var name = ($('spr-name') && $('spr-name').value || '').trim();
+    var ch = (window.RESOURCE.characters || {})[name];
+    var outs = ch ? Object.keys(ch.outfits || {}) : [];
+    if (outs.indexOf('常服') < 0) outs.unshift('常服');
+    var o = ($('spr-outfit') && $('spr-outfit').value || '').trim() || (ch && ch.default_outfit) || '常服';
+    var ex = Opening.STATES.slice();
+    if (ch && ch.outfits && ch.outfits[o]) Object.keys(ch.outfits[o]).forEach(function (e) { if (ex.indexOf(e) < 0) ex.push(e); });
+    $('spr-outfits').innerHTML = outs.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('');
+    $('spr-exprs').innerHTML = ex.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('');
+    var n = $('spr-who');
+    if (n) n.textContent = !name ? '' : CustomSprites.names().indexOf(name) >= 0 && CustomSprites.isNew(name) ? '（你新加的角色）'
+      : ch ? '卡里有这个角色（' + Object.keys(ch.outfits || {}).length + ' 套有表情的服装）—— 同一套衣服同一个表情会换成你的图'
+      : (window.RESOURCE.defaults || {})[name] ? '卡里只有她的默认立绘 —— 你加的表情会优先用，没加的表情还用默认立绘'
+      : '卡里没有这个角色，会新建一个';
+  }
+  function renderSpr() {
+    var host = $('spr-host'); if (!host) return;
+    var all = CustomSprites.list();
+    var byName = {};
+    all.forEach(function (x) { (byName[x.name] = byName[x.name] || []).push(x); });
+    var roster = Opening.roster();
+    host.innerHTML =
+      '<div class="kt-sec"><h4>添 加 立 绘</h4>' +
+      '<div class="kt-hint">卡里没有的角色、想换成自己的图、想多加一个表情或一套衣服，都在这里加。' +
+        '图可以从本机选（会压缩后存在这个浏览器里），也可以贴图片地址。最好用去了背景的透明 PNG / WebP，竖版全身或半身。</div>' +
+      '<div class="spr-grid3">' +
+        '<div class="kt-field"><label>角色名</label><input type="text" id="spr-name" list="spr-names" placeholder="和剧本里写的名字一样" value="' + esc(sprForm.name) + '"></div>' +
+        '<div class="kt-field"><label>服装</label><input type="text" id="spr-outfit" list="spr-outfits" placeholder="常服" value="' + esc(sprForm.outfit) + '"></div>' +
+        '<div class="kt-field"><label>表情</label><input type="text" id="spr-expr" list="spr-exprs" placeholder="平静" value="' + esc(sprForm.expr) + '"></div>' +
+      '</div>' +
+      '<datalist id="spr-names">' + roster.slice(0, 2000).map(function (x) { return '<option value="' + esc(x) + '">'; }).join('') + '</datalist>' +
+      '<datalist id="spr-outfits"></datalist><datalist id="spr-exprs"></datalist>' +
+      '<div class="kt-hint" id="spr-who"></div>' +
+      '<div class="spr-src"><label class="kt-btn kt-btn-primary">从本机选图…<input type="file" id="spr-file" accept="image/*" multiple hidden></label>' +
+        '<input type="text" id="spr-url" placeholder="或者贴图片地址 https://…"><button class="kt-btn" id="spr-add-url">添加</button></div>' +
+      '<label class="chk"><input type="checkbox" id="spr-byname" checked> 一次选了好几张时，用文件名当表情名（微笑.png → 微笑）</label>' +
+      '<div class="kt-hint">每个角色至少加一张「平静」：剧本里写了没有的表情时，会先找平静 / 普通 / 微笑顶上。' +
+        '加了立绘的角色，表情列表会自动告诉 AI，它写台词时就会挑这些表情。</div></div>' +
+      '<div class="kt-sec"><h4>我 加 的 立 绘 <span class="cnt">' + all.length + '</span></h4>' +
+      '<div class="kt-acts"><button class="kt-btn" id="spr-export"' + (all.length ? '' : ' disabled') + '>导出</button>' +
+        '<label class="kt-btn">导入…<input type="file" id="spr-import" accept=".json" hidden></label></div>' +
+      (all.length ? Object.keys(byName).map(function (n) {
+        var isNew = CustomSprites.isNew(n);
+        var tag = !isNew ? '卡里有，同表情用你的图' : (window.RESOURCE.defaults || {})[n] ? '卡里只有默认立绘，补上表情' : '新角色';
+        return '<div class="spr-ch"><div class="spr-chh"><b>' + esc(n) + '</b><span>' + tag + ' · ' + byName[n].length + ' 张</span>' +
+          '<button class="kt-btn" data-sprdelc="' + esc(n) + '">全部删除</button><button class="kt-btn" data-sprpick="' + esc(n) + '">再加</button></div>' +
+          '<div class="spr-thumbs">' + byName[n].map(function (x) {
+            return '<figure class="spr-t"><img alt="" loading="lazy" src="' + esc(/^data:/.test(x.url) ? x.url : ImgNet.srcFor(x.url)) + '">' +
+              '<figcaption>' + esc(x.outfit) + ' · ' + esc(x.expr) + '</figcaption>' +
+              '<button title="删掉这张" data-sprdel="' + esc(JSON.stringify([x.name, x.outfit, x.expr, x.idx])) + '">×</button></figure>';
+          }).join('') + '</div></div>';
+      }).join('') : '<div class="kt-empty">还没加过立绘。</div>') +
+      '<div class="kt-hint">导出成一个 json 文件，换浏览器 / 换手机时导入就回来了（存档备份里不含立绘）。</div></div>';
+    sprDatalists();
+    ['spr-name', 'spr-outfit'].forEach(function (id) { $(id).oninput = function () { sprFormVals(); sprDatalists(); }; });
+    $('spr-expr').oninput = function () { sprFormVals(); };
+    $('spr-file').onchange = async function () {
+      var files = Array.prototype.slice.call(this.files || []); this.value = '';
+      if (!files.length) return;
+      var f = sprFormVals();
+      if (!f.name) { toast('先填角色名。', 'warn', 4000); return; }
+      var byName = files.length > 1 && $('spr-byname').checked, ok = 0, bad = [];
+      for (var i = 0; i < files.length; i++) {
+        try {
+          var d = await fileToSprite(files[i]);
+          var ex = byName ? files[i].name.replace(/\.[a-z0-9]+$/i, '').trim() : f.expr;
+          CustomSprites.add(f.name, f.outfit, ex, d); ok++;
+        } catch (e) { bad.push(e.message || String(e)); }
+      }
+      await sprChanged();
+      toast('加了 ' + ok + ' 张立绘' + (bad.length ? '；' + bad.length + ' 张没加上：' + bad[0] : ''), bad.length ? 'warn' : 'ok', 5000);
+    };
+    $('spr-add-url').onclick = function () {
+      var f = sprFormVals(), u = ($('spr-url').value || '').trim();
+      try { CustomSprites.add(f.name, f.outfit, f.expr, u); }
+      catch (e) { toast(e.message, 'warn', 4000); return; }
+      sprChanged(); toast('加上了', 'ok', 2500);
+    };
+    $('spr-export').onclick = function () {
+      download('自定义立绘.json', JSON.stringify(CustomSprites.exportJSON()));
+    };
+    $('spr-import').onchange = function () {
+      var file = this.files[0]; this.value = '';
+      if (!file) return;
+      file.text().then(function (t) {
+        var n = CustomSprites.importJSON(parseJSONLoose(t));
+        sprChanged(); toast('导入了 ' + n + ' 张立绘', n ? 'ok' : 'warn', 4000);
+      }).catch(function (e) { toast('导入失败：' + (e.message || e), 'bad', 6000); });
+    };
+    PA('#spr-host [data-sprdel]').forEach(function (b) {
+      b.onclick = function () {
+        var a = JSON.parse(b.getAttribute('data-sprdel'));
+        CustomSprites.remove(a[0], a[1], a[2], a[3]); sprChanged();
+      };
+    });
+    PA('#spr-host [data-sprdelc]').forEach(function (b) {
+      b.onclick = function () {
+        var n = b.getAttribute('data-sprdelc');
+        if (!confirm('删掉「' + n + '」的全部自定义立绘？')) return;
+        CustomSprites.remove(n); sprChanged();
+      };
+    });
+    PA('#spr-host [data-sprpick]').forEach(function (b) {
+      b.onclick = function () {
+        $('spr-name').value = b.getAttribute('data-sprpick'); sprFormVals(); sprDatalists();
+        $('spr-expr').focus();
+        var sec = $('spr-host').querySelector('.kt-sec'); if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: 'start' });
+      };
+    });
+  }
+  CustomSprites.load().then(function () {
+    CustomSprites.apply();
+    if (CustomSprites.count()) {
+      if (typeof noteAssets === 'function') noteAssets();
+      if (eng.log.length && $('boot').classList.contains('gone')) goTo(qi, { instant: true });
+    }
+  });
+
   function subNote() {
     var n = $('sub-note'); if (!n) return;
     var s = GalAPI.loadSubConfig(), pe = peCfg();
@@ -5222,7 +5433,7 @@
       autosave({ skipNode: true });
       if (spec.aiOpening) {
         /* 让大家先看一眼摆好的场景，再发请求 */
-        setTimeout(function () { if (runId === myRun) submit(Opening.directive(spec)); }, 600);
+        setTimeout(function () { if (runId === myRun) submit(Opening.directive(spec), { said: '（按自定义开场的设定写开场）' }); }, 600);
       } else {
         toast('场景摆好了，输入你的第一句话开始。', 'ok', 5000);
       }
@@ -5312,6 +5523,7 @@
     activeNode: function () { return activeNode; },
     submit: function (t) { return submit(t); },
     memoryNow: function () { return memoryAfterTurn(true); },
+    openApp: function (k) { return openApp(k); },
     setDevice: setDevice, setOrient: setOrient, setTbHidden: setTbHidden,
     stageFor: stageFor, phoneBack: phoneBack
   };

@@ -279,10 +279,22 @@
       trends.push({ text: t.topic || t, cat: t.cat, cnt: t.cnt, seed: true });
     });
 
+    /* 动态下的评论（玩家写的 + 独立生成的回复）：存在 phoneSent 里，按帖子 id 挂回去。
+       v5.27 以前只挂在当次扫描出来的临时对象上，退出帖子再进来就没了 */
+    var postById = {};
+    posts.forEach(function (p) { postById[p.id] = p; });
+    (sent || []).forEach(function (m) {
+      if (!m || m.kind !== 'cmt') return;
+      var p = postById[m.post];
+      if (!p) return;
+      p.cmts.push({ who: m.who, text: m.text, mine: !!m.mine });
+      p.comments = String((parseInt(p.comments, 10) || 0) + 1);
+    });
+
     /* 手机里产生的消息：玩家自己发的（me=true）和独立生成的对方回复（me=false）。
        原来这里一律标成 me，导致角色的回信在注入主线时被写成"指挥官说的"。 */
     (sent || []).forEach(function (m) {
-      if (!m.type) return;                      // 跳过非消息类记录
+      if (!m.type || m.kind) return;            // 跳过非消息类记录（评论等）
       var bucket = m.group ? (groups[m.group] = groups[m.group] || [])
                            : (chats[m.who] = chats[m.who] || []);
       bucket.push({ who: m.who, type: m.type, v: m.v, me: !!m.me, turn: m.turn });

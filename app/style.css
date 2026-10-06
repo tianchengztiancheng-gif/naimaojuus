@@ -971,3 +971,9 @@ html:not(.m-mobile) .m-only{display:none}
 #boot .linkbtn{background:none;border:0;padding:0 2px;margin-left:6px;color:#ff9f9f;font:inherit;font-size:.92em;
   text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 #boot .linkbtn:hover{color:#ffc4c4}
+
+/* ---- 回看里显示玩家这一轮说的话（v5.27） ---- */
+.histline.me{background:rgba(255,183,122,.09);border-left:2px solid rgba(255,170,110,.7)}
+.histline.me span{white-space:pre-wrap;word-break:break-word}
+#jup-root .jp-body .histline.me b{color:#ffb27a}
+.histturn .tsum .tme{font-style:normal;color:#ffb27a;opacity:1}

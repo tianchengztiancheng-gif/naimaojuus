@@ -396,3 +396,26 @@
 @media (max-width:560px){ #jup-root .mem-grid{grid-template-columns:1fr} }
 #jup-root #mem-host .kt-acts{margin-bottom:18px}
 #jup-root .mem-err{color:#ffb1a1;border-left:3px solid rgba(255,140,120,.6);padding-left:10px;margin:4px 0 10px}
+
+/* ---- 自定义立绘（v5.27） ---- */
+#jup-root .spr-grid3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:0 12px}
+#jup-root .spr-grid3 .kt-field{min-width:0}
+#jup-root .spr-grid3 input{width:100%;box-sizing:border-box}
+#jup-root #spr-who{margin:-2px 0 10px;min-height:1em}
+#jup-root .spr-src{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:4px 0 10px}
+#jup-root .spr-src input[type=text]{flex:1 1 200px;min-width:0}
+#jup-root .spr-src .kt-btn + input,#jup-root .spr-src input + .kt-btn{margin-left:0}
+#jup-root .spr-ch{border:1px solid rgba(var(--acc),.18);border-radius:10px;padding:10px 12px;margin:10px 0;background:rgba(0,0,0,.12)}
+#jup-root .spr-chh{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+#jup-root .spr-chh b{font-size:14px;color:rgb(var(--acc))}
+#jup-root .spr-chh span{flex:1;font-size:12px;opacity:.65}
+#jup-root .spr-chh .kt-btn{min-height:28px;padding:0 10px;font-size:12px}
+#jup-root .spr-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px}
+#jup-root .spr-t{position:relative;margin:0;border-radius:8px;overflow:hidden;
+  background:repeating-conic-gradient(rgba(255,255,255,.06) 0 25%,transparent 0 50%) 0 0/14px 14px;border:1px solid rgba(var(--acc),.15)}
+#jup-root .spr-t img{display:block;width:100%;height:130px;object-fit:contain;object-position:center bottom}
+#jup-root .spr-t figcaption{font-size:11px;padding:4px 6px;background:rgba(0,0,0,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#jup-root .spr-t button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:0;
+  background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:24px;padding:0;cursor:pointer}
+#jup-root .spr-t button:hover{background:rgba(200,60,60,.85)}
+@media (max-width:560px){ #jup-root .spr-grid3{grid-template-columns:1fr 1fr} #jup-root .spr-grid3 .kt-field:first-child{grid-column:1/-1} }

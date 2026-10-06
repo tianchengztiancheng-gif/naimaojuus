@@ -78,6 +78,8 @@
       try { this.resStats = global.CardRes.apply(card); }
       catch (e) { this.resStats = null; }
     }
+    /* 玩家自己加的立绘：载卡把 RESOURCE.characters 整块重写了，再合一次（v5.27） */
+    if (global.CustomSprites) { global.CustomSprites.forget(); global.CustomSprites.apply(); }
     return this.pool.length;
   };
 
@@ -402,7 +404,8 @@
       macroVars: this.macroVars || (this.macroVars = {}),
       model: this.cfg.model || (global.GalAPI && global.GalAPI.loadConfig().model) || '',
       /* opt.extraHint：只对这一次请求有效的附加要求（重roll 时的「换一种写法」） */
-      extraSystem: [this.renderVars(), this.renderPhoneLog(), opt.extraHint || ''].filter(Boolean).join('\n\n')
+      extraSystem: [this.renderVars(), this.renderPhoneLog(),
+        global.CustomSprites ? global.CustomSprites.note() : '', opt.extraHint || ''].filter(Boolean).join('\n\n')
     });
 
     this.lastReport = { worldbook: wb, prompt: built };
