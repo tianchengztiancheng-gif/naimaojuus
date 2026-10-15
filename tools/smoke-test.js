@@ -43,7 +43,7 @@ if (!HAVE_REAL_RES) console.log('（未找到真素材表，改用 test/fixtures
 const FILES = [
   ...(HAVE_REAL_RES ? REAL_RES : ['test/fixtures/resource.js']),
   'resource/aliases.js',
-  'core/crash.js', 'core/cardres.js', 'core/tokens.js', 'core/vector.js',
+  'core/crash.js', 'core/cardres.js', 'core/cardpatch.js', 'resource/juus-patch.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
   'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'core/customsprites.js', 'app/app.js'
@@ -1419,6 +1419,20 @@ console.log('\n[7j] 自定义立绘 / 回看显示玩家的话 / 评论存档（
   ok('载卡后重新合一次自定义立绘', /CustomSprites\.forget\(\); global\.CustomSprites\.apply\(\)/.test(fs.readFileSync(path.join(ROOT, 'core/engine.js'), 'utf8')));
   ok('回看里每轮显示玩家的话', /res\.modules\[0\]\.said = opt\.said \|\| userText/.test(src) && /histline me/.test(src));
   ok('动态评论存进 phoneSent', /kind: 'cmt', post: post\.id/.test(src));
+}
+
+console.log('\n[7k] 卡修订包 / 立绘图库（v5.28）');
+{
+  ok('CardPatch 加载了，juus 修订包注册了', !!w.CardPatch && w.CardPatch._list().some(p => p.id === 'juus'));
+  ok('载卡时打修订包（CardRes 之后、自定义立绘之前）', /CardRes\.apply\(card\)[\s\S]{0,600}CardPatch\.apply\(card, this\)[\s\S]{0,400}CustomSprites\.forget/.test(fs.readFileSync(path.join(ROOT, 'core/engine.js'), 'utf8')));
+  ok('开场列表接上修订包的开场', /CardPatch\.openings\(card\)/.test(fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8')));
+  ok('工具栏和开场引导都有立绘图库入口', !!d.getElementById('btn-gallery') && !!d.getElementById('boot-gallery') && !!d.getElementById('sg-modal'));
+  d.getElementById('btn-gallery').click();
+  ok('图库能打开，列出有差分的角色', !d.getElementById('sg-modal').hidden && d.querySelectorAll('.sg-char').length === Object.keys(w.RESOURCE.characters).filter(n => Object.keys((w.RESOURCE.characters[n] || {}).outfits || {}).length).length);
+  const first = d.querySelector('.sg-char');
+  if (first) { first.click(); ok('点进去列出这个角色的全部立绘', d.querySelectorAll('.sg-pic').length > 0 && !d.getElementById('sg-back').hidden); }
+  d.getElementById('sg-close').click();
+  ok('关掉', d.getElementById('sg-modal').hidden);
 }
 
 console.log('\n[8] 运行期未捕获错误');

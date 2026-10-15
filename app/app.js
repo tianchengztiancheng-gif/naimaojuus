@@ -2064,7 +2064,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.27</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.28</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -4587,6 +4587,9 @@
       if (chars || defs || locs) {
         html += ' ｜ 立绘 <b>' + (chars + defs) + '</b> 角色 ｜ 场景 <b>' + locs + '</b> 地点';
         if (st && !st.found) html += ' <span class="dim">（来自预置素材包）</span>';
+        var ps = eng.patchStats;
+        if (ps && ps.ids && ps.ids.length) html += ' <span class="dim">（已打仓库修订包：换 / 加立绘 ' + ps.sprites +
+          ' 人，删挂链 ' + ps.dropped + ' 处，对调 ' + ps.swapped + ' 组，世界书 +' + ps.worldbook + '，开场 +' + ps.openings + '）</span>';
       } else {
         html += ' <span class="warn">— 这张卡里没找到立绘表，舞台会是空的</span>';
       }
@@ -4597,6 +4600,7 @@
       toast('已删掉 ' + deleteUserRegex(null) + ' 条导入的正则', 'ok', 3000);
     };
     $('btn-start').disabled = !loaded.card;
+    if (typeof sgBootBtn === 'function') sgBootBtn();
     if (typeof renderBoot === 'function') renderBoot();
     /* 自定义开场的舰娘和场景都从卡里来：卡一载入就重画 */
     if (typeof OPC !== 'undefined' && OPC && OPC.mode === 'custom') renderOpc();
@@ -4607,7 +4611,9 @@
       (d.alternate_greetings || []).map(function (g, i) {
         var m = g.match(/『([^』]*)』/);
         return { n: (i + 1) + '. ' + (m ? m[1].replace(/✨/g, '').trim().slice(0, 40) : '开场 ' + (i + 1)), t: g };
-      }));
+      }),
+      /* 仓库修订包加的开场（resource/*-patch.js），排在卡自带的后面 */
+      window.CardPatch ? CardPatch.openings(card) : []);
     $('opening-sel').innerHTML = list.map(function (o, i) {
       return '<option value="' + i + '">' + esc(o.n) + '</option>';
     }).join('') || '<option value="">（无开场白）</option>';
@@ -5446,6 +5452,132 @@
     var id = this.dataset.slot || 'auto';
     restoreFrom(await GalStore.loadSlot(id), id);
   };
+
+  /* ============================================================
+     立绘图库（v5.28）
+     有表情差分的角色（RESOURCE.characters，载卡 + 修订包 + 自定义立绘之后的样子）：
+     角色列表 → 点进去按服装分页、每个表情的每一张都列出来 → 点图看大图（← → 翻，Esc 关）。
+     图多（三千多张），一律 loading="lazy"，滚到才加载；走 ImgNet.srcFor，和舞台同一套图片网络。
+     ============================================================ */
+  var SG = { who: null, outfit: null, list: [], idx: -1, q: '' };
+  function sgChars() {
+    var C = (window.RESOURCE && RESOURCE.characters) || {};
+    return Object.keys(C).filter(function (n) {
+      var o = (C[n] && C[n].outfits) || {};
+      return Object.keys(o).some(function (k) { return Object.keys(o[k] || {}).length; });
+    }).map(function (n) {
+      var c = C[n], outs = c.outfits || {}, exprs = 0, pics = 0;
+      Object.keys(outs).forEach(function (k) {
+        Object.keys(outs[k] || {}).forEach(function (e) { exprs++; pics += (outs[k][e] || []).length; });
+      });
+      var dof = outs[c.default_outfit] ? c.default_outfit : Object.keys(outs)[0];
+      var ex = outs[dof] || {};
+      var face = ['微笑', '平静', '开心', '普通'].filter(function (k) { return ex[k] && ex[k].length; })[0] || Object.keys(ex)[0];
+      return { name: n, outfits: Object.keys(outs).length, exprs: exprs, pics: pics, thumb: face ? ex[face][0] : '' };
+    });
+  }
+  function sgBootBtn() {
+    var b = $('boot-gallery'); if (!b) return;
+    var n = sgChars().length;
+    b.hidden = !n;
+    if ($('boot-gallery-n')) $('boot-gallery-n').textContent = n + ' 位';
+  }
+  function sgImg(url) {
+    return '<img loading="lazy" decoding="async" alt="" src="' + esc(ImgNet.srcFor(url)) + '" onerror="this.classList.add(\'bad\')">';
+  }
+  function openGallery() {
+    closePhone();
+    SG.who = null;
+    $('sg-modal').hidden = false;
+    renderGallery();
+  }
+  function closeGallery() { $('sg-modal').hidden = true; $('sg-view').hidden = true; }
+  function renderGallery() {
+    var body = $('sg-body');
+    $('sg-view').hidden = true;
+    if (!SG.who) {
+      var all = sgChars();
+      var q = SG.q.trim();
+      var list = q ? all.filter(function (c) { return c.name.indexOf(q) >= 0; }) : all;
+      $('sg-back').hidden = true; $('sg-q').hidden = false; $('sg-tabs').hidden = true;
+      $('sg-title').textContent = '立 绘 图 库';
+      $('sg-stat').textContent = all.length ? all.length + ' 位 · ' + all.reduce(function (a, c) { return a + c.pics; }, 0) + ' 张' : '';
+      if (!all.length) {
+        body.innerHTML = '<div class="sg-empty">还没有立绘。<br>先在开场引导里载入角色卡（juus 卡里有七十多位舰娘的表情差分）。</div>';
+        return;
+      }
+      body.innerHTML = list.length ? '<div class="sg-grid">' + list.map(function (c) {
+        return '<button type="button" class="sg-char" data-sgwho="' + esc(c.name) + '">' +
+          '<div class="ph">' + (c.thumb ? sgImg(c.thumb) : '') + '</div>' +
+          '<b>' + esc(c.name) + '</b><i>' + (c.outfits > 1 ? c.outfits + ' 套服装 · ' : '') + c.exprs + ' 种表情 · ' + c.pics + ' 张</i></button>';
+      }).join('') + '</div>' : '<div class="sg-empty">没有名字里带「' + esc(q) + '」的角色。</div>';
+      return;
+    }
+    var C = RESOURCE.characters[SG.who];
+    if (!C) { SG.who = null; renderGallery(); return; }
+    var outs = C.outfits || {}, names = Object.keys(outs);
+    if (!SG.outfit || !outs[SG.outfit]) SG.outfit = outs[C.default_outfit] ? C.default_outfit : names[0];
+    $('sg-back').hidden = false; $('sg-q').hidden = true;
+    $('sg-title').textContent = SG.who;
+    $('sg-tabs').hidden = names.length < 2;
+    $('sg-tabs').innerHTML = names.map(function (o) {
+      var n = 0; Object.keys(outs[o] || {}).forEach(function (e) { n += (outs[o][e] || []).length; });
+      return '<button type="button" data-sgout="' + esc(o) + '"' + (o === SG.outfit ? ' class="on"' : '') + '>' + esc(o) + ' · ' + n + '</button>';
+    }).join('');
+    SG.list = [];
+    var ex = outs[SG.outfit] || {};
+    Object.keys(ex).forEach(function (e) {
+      var arr = ex[e] || [];
+      arr.forEach(function (u, i) { SG.list.push({ url: u, expr: e, n: i + 1, of: arr.length }); });
+    });
+    $('sg-stat').textContent = SG.outfit + ' · ' + Object.keys(ex).length + ' 种表情 · ' + SG.list.length + ' 张';
+    body.innerHTML = '<div class="sg-pics">' + SG.list.map(function (p, i) {
+      return '<button type="button" class="sg-pic" data-sgi="' + i + '"><div class="ph">' + sgImg(p.url) + '</div>' +
+        '<span>' + esc(p.expr) + (p.of > 1 ? '<em>' + p.n + '/' + p.of + '</em>' : '') + '</span></button>';
+    }).join('') + '</div>';
+    body.scrollTop = 0;
+  }
+  function sgShow(i) {
+    if (!SG.list.length) return;
+    SG.idx = (i + SG.list.length) % SG.list.length;
+    var p = SG.list[SG.idx];
+    $('sg-img').src = ImgNet.srcFor(p.url);
+    $('sg-cap').innerHTML = esc(SG.who) + ' · ' + esc(p.expr) + (p.of > 1 ? ' ' + p.n + '/' + p.of : '') +
+      '<small>' + (SG.idx + 1) + ' / ' + SG.list.length + '</small>';
+    $('sg-view').hidden = false;
+  }
+  $('btn-gallery').onclick = openGallery;
+  /* 相册里也有一个入口：手机竖屏工具栏放不下第 9 个键，❖ 在竖屏是藏起来的 */
+  if ($('cg-sg')) $('cg-sg').onclick = function () { $('cg-panel').hidden = true; openGallery(); };
+  if ($('boot-gallery')) $('boot-gallery').onclick = openGallery;
+  $('sg-close').onclick = closeGallery;
+  $('sg-back').onclick = function () { SG.who = null; renderGallery(); };
+  $('sg-q').oninput = function () { SG.q = this.value; renderGallery(); };
+  $('sg-modal').addEventListener('click', function (e) {
+    if (e.target === this) { closeGallery(); return; }
+    var c = e.target.closest('[data-sgwho]');
+    if (c) { SG.who = c.getAttribute('data-sgwho'); SG.outfit = null; renderGallery(); return; }
+    var t = e.target.closest('[data-sgout]');
+    if (t) { SG.outfit = t.getAttribute('data-sgout'); renderGallery(); return; }
+    var pic = e.target.closest('[data-sgi]');
+    if (pic) sgShow(+pic.getAttribute('data-sgi'));
+  });
+  $('sg-prev').onclick = function () { sgShow(SG.idx - 1); };
+  $('sg-next').onclick = function () { sgShow(SG.idx + 1); };
+  $('sg-vx').onclick = function () { $('sg-view').hidden = true; };
+  $('sg-view').addEventListener('click', function (e) { if (e.target === this || e.target.tagName === 'FIGURE') this.hidden = true; });
+  /* 图库开着时方向键 / Esc 归它管，别让舞台跟着翻句 */
+  document.addEventListener('keydown', function (e) {
+    if ($('sg-modal').hidden) return;
+    var view = !$('sg-view').hidden;
+    if (e.key === 'Escape') { if (view) $('sg-view').hidden = true; else closeGallery(); }
+    else if (view && e.key === 'ArrowLeft') sgShow(SG.idx - 1);
+    else if (view && e.key === 'ArrowRight') sgShow(SG.idx + 1);
+    else if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName || '')) return;
+    else if (e.key === 'Backspace' && SG.who) { SG.who = null; renderGallery(); }
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();
+  }, true);
 
   $('btn-exit').onclick = function () { leaveGame(); };
   $('btn-saves').onclick = openSaves;

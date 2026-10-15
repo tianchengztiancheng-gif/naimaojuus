@@ -1183,6 +1183,24 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - 测试：`tools/e2e-custom.mjs`（23；中文文件名的上传用 buffer 传，这台环境里 setInputFiles 传中文路径会静默失败），
   `tools/unit/test-customsprites.mjs`（33，含评论挂回），冒烟 [7j]；设置分区数 → 12。
 
+## 七·二十、卡修订包 / 立绘图库（v5.28）
+
+- **为什么**：立绘、世界书、开场都在卡里，卡发出去以后想换图 / 删挂掉的猫箱链接 / 加开局，只能让所有人重新下载卡。
+  修订包放仓库里，载入认得出的卡时自动打，Pages 更新大家就都有了。
+- **core/cardpatch.js**（机制）：`CardPatch.register({id, match(card), sprites, dropSprites, dropDefaults, swapDefaults, worldbook, disableEntries, openings})`。
+  `apply(card, eng)` 在 `Engine.loadCard` 里 **CardRes.apply 之后、CustomSprites 之前**调用（卡是底子，修订包盖上面，玩家自己加的立绘最上面），
+  结果存 `eng.patchStats`，`noteAssets()` 显示。`sprites` 是整个角色换成新对象（CustomSprites 的还原逻辑按对象认，不会搅乱）；
+  世界书按卡格式写，`Worldbook.fromCard` 转，uid 前缀 `patch:<id>:`，和卡里 **comment 同名的条目被替换**；`openings(card)` 给 `fillOpenings()` 接在卡自带的后面。
+- **resource/juus-patch.js**（数据，进仓库 —— 立绘是项目自己跑的图，世界书是维护者给的，不是从卡里抽的）：
+  认卡 `/juus|奶猫崛起/i` 测 `data.name`。贾维斯 34 表情 / 72 张 + 设定条目（@深度 5，order 998）+ 差分条目；雅努斯整套换 33 / 68 + 差分条目；
+  删巴尔的摩 / 布莱默顿 / 武藏的表情差分并关掉它们的「X差分」条目；威尔士 / 威尔士亲王的表情差分有就删（手头这版卡里没有差分；默认立绘 5 张实测能打开、画的是她，保留）；飞龙 ↔ 飞龙·META、苍龙 ↔ 苍龙·META 对调原皮（`swapDefaults` 只换第 0 张，后面的换装皮肤不动；看过图：卡里「飞龙」第 0 张是黑灰机械风的 META，「飞龙·META」那张才是原版）；
+  开局「★ 医务室 · 贾维斯与雅努斯（好感 80）」（juus 格式 + JSONPatch，seedVarsFromOpening 先按登场的人建 人物，好感默认 80，变量块再写细节）。
+  用户给的贾维斯设定最后断在「同阵营关键」半句，那半句删了。
+- **立绘图库**（app.js「立绘图库」一节，`#sg-modal`）：`sgChars()` 只列 `RESOURCE.characters` 里有表情的；列表 → 角色（服装分页 `#sg-tabs`）→ 大图 `#sg-view`。
+  图一律 `loading="lazy"` + `ImgNet.srcFor`。键盘在捕获阶段拦（← → Esc Backspace），`stopImmediatePropagation`，舞台不会跟着翻句。
+  入口：工具栏 `#btn-gallery`（❖）、开场引导左栏 `#boot-gallery`（`sgBootBtn()` 在 `noteAssets()` 里刷新，没有立绘时藏起来）。
+- 测试：`tools/e2e-patch.mjs`（25，合成的「juus」卡 + 拦截猫箱地址给占位图），`tools/unit/test-cardpatch.mjs`（22，含开场里的表情都在新立绘里），冒烟 [7k]。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

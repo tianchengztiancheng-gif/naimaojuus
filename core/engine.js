@@ -78,6 +78,13 @@
       try { this.resStats = global.CardRes.apply(card); }
       catch (e) { this.resStats = null; }
     }
+    /* 仓库里的修订包（resource/*-patch.js）：换立绘、删挂掉的链接、补世界书、加开场。
+       认得出这张卡才打，盖在卡的素材上面、玩家自己加的立绘下面（v5.28，见 core/cardpatch.js） */
+    this.patchStats = null;
+    if (global.CardPatch) {
+      try { this.patchStats = global.CardPatch.apply(card, this); }
+      catch (e) { this.patchStats = null; }
+    }
     /* 玩家自己加的立绘：载卡把 RESOURCE.characters 整块重写了，再合一次（v5.27） */
     if (global.CustomSprites) { global.CustomSprites.forget(); global.CustomSprites.apply(); }
     return this.pool.length;

@@ -46,6 +46,8 @@ html.m-mobile.tb-hidden #envbar{max-width:calc(100% - 60px - var(--safe-l) - var
 html.m-port.tb-hidden #envbar{top:calc(var(--safe-t) + 8px)}
 /* 竖屏一排八个键（含横竖屏、收起把手）：键间距收窄，360 宽的小手机也放得下 */
 html.m-port #toolbar{gap:4px}
+/* 立绘图库 ❖ 是第 9 个键，竖屏放不下：竖屏藏起来，从相册（✿）顶上的「❖ 立绘图库」进（v5.28） */
+html.m-port #toolbar #btn-gallery{display:none}
 html.m-mobile #toolbar #btn-tbhide{width:26px;font-size:20px}
 html.m-mobile #toolbar #btn-orient{font-size:14px;font-weight:600;color:#bfe6f5}
 
@@ -320,3 +322,14 @@ html.m-port #boot .opc-c{gap:8px;padding:8px 10px}
 html.m-port #boot .opc-c .av{width:34px;height:34px}
 html.m-port #boot .opc-two{grid-template-columns:1fr 1fr;gap:6px}
 html.m-port #boot .opc-c input[type=text],html.m-port #boot .opc-c select{padding-top:8px;padding-bottom:8px}
+
+/* 立绘图库（v5.28）：手机上铺满，卡片小一点 */
+html.m-mobile #sg-modal{padding:0}
+html.m-mobile .sg-grid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
+html.m-mobile .sg-char .ph{height:150px}
+html.m-mobile .sg-pics{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+html.m-mobile .sg-pic .ph{height:140px}
+html.m-mobile .sg-body{padding:12px 12px 20px}
+html.m-mobile #sg-q{width:100%;order:9;margin-left:0}
+html.m-mobile .sg-view figure{max-width:calc(100% - 20px)}
+html.m-mobile .sg-nav{top:auto;bottom:18px;transform:none;width:42px;height:42px}

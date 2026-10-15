@@ -32,14 +32,14 @@
 })();
 </script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.27">
+<link rel="stylesheet" href="app/style.css?v=5.28">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.27">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.28">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.27">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.27">
+<link rel="stylesheet" href="app/phone.css?v=5.28">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.28">
 <!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
-<link rel="stylesheet" href="app/mobile.css?v=5.27">
+<link rel="stylesheet" href="app/mobile.css?v=5.28">
 </head>
 <body>
 
@@ -103,6 +103,7 @@
     <button id="btn-cgmode" title="CG 常驻：让 CG 盖住立绘，一直铺着推剧情">▣</button>
     <button id="btn-cg" title="CG / 相册">✿<i id="cg-dot" hidden></i></button>
     <button id="btn-skin" title="换装（在场舰娘的皮肤）">◈</button>
+    <button id="btn-gallery" title="立绘图库：有表情差分的舰娘的全部立绘">❖</button>
     <button id="btn-saves" title="存档 / 读档（每轮自动存，读旧的接着玩会长出分支）">▤</button>
     <button id="btn-phone" title="打开手机（剧情、状态、存档、外观、调试都在里面）">▢<i id="phone-dot" hidden></i></button>
     </div>
@@ -115,7 +116,7 @@
   </div>
 
   <div id="cg-panel" hidden>
-    <header>相 册<span id="cg-stat"></span><button class="x" id="cg-close">×</button></header>
+    <header>相 册<span id="cg-stat"></span><button type="button" class="cg-sg" id="cg-sg" title="立绘图库：有表情差分的舰娘的全部立绘">❖ 立绘图库</button><button class="x" id="cg-close">×</button></header>
     <div id="cg-now"></div>
     <div id="cg-body"></div>
   </div>
@@ -163,6 +164,27 @@
   </div>
 
   <!-- 存读档（存档树）。版式参考 KaiTuoYiShi 的存档树控制台 -->
+  <!-- 立绘图库（v5.28）：有表情差分的舰娘，每人全部立绘按服装 / 表情排好，点开看大图。app.js「立绘图库」一节 -->
+  <div id="sg-modal" hidden>
+    <div class="sv-shell sg-shell" role="dialog" aria-modal="true" aria-labelledby="sg-title">
+      <header class="sv-hd">
+        <button type="button" class="x sg-back" id="sg-back" hidden title="回到角色列表">‹</button>
+        <div><div class="sv-kicker">SPRITE GALLERY</div><h2 id="sg-title">立 绘 图 库</h2></div>
+        <input type="search" id="sg-q" placeholder="搜角色名…" autocomplete="off">
+        <span class="sv-cur" id="sg-stat"></span>
+        <button type="button" class="x" id="sg-close" title="关闭">×</button>
+      </header>
+      <div class="sg-tabs" id="sg-tabs" hidden></div>
+      <div class="sg-body" id="sg-body"></div>
+    </div>
+    <div class="sg-view" id="sg-view" hidden>
+      <button type="button" class="sg-nav sg-prev" id="sg-prev" title="上一张（←）">‹</button>
+      <figure><img id="sg-img" alt=""><figcaption id="sg-cap"></figcaption></figure>
+      <button type="button" class="sg-nav sg-next" id="sg-next" title="下一张（→）">›</button>
+      <button type="button" class="x sg-vx" id="sg-vx" title="关闭（Esc）">×</button>
+    </div>
+  </div>
+
   <div id="save-modal" hidden>
     <div class="sv-shell" role="dialog" aria-label="存档">
       <header class="sv-hd">
@@ -288,6 +310,7 @@
         <span class="hint" id="dev-auto"></span>
       </div>
 
+      <button type="button" class="boot-gallery" id="boot-gallery" hidden>❖ 立绘图库<span id="boot-gallery-n"></span></button>
       <button type="button" class="boot-resume" id="btn-continue" hidden>
         <b>继续上次</b><span id="resume-meta">读取自动存档</span>
       </button>
@@ -311,7 +334,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.27</span>
+        <span>gal 引擎 · v5.28</span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -501,29 +524,32 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.27"></script>
-<script src="core/cardres.js?v=5.27"></script>
-<script src="core/tokens.js?v=5.27"></script>
-<script src="core/vector.js?v=5.27"></script>
-<script src="core/imagegen.js?v=5.27"></script>
-<script src="core/snapshot.js?v=5.27"></script>
-<script src="core/gallery.js?v=5.27"></script>
-<script src="core/cg.js?v=5.27"></script>
-<script src="core/resolver.js?v=5.27"></script>
-<script src="core/worldbook.js?v=5.27"></script>
-<script src="core/regex.js?v=5.27"></script>
-<script src="core/prompt.js?v=5.27"></script>
-<script src="core/script.js?v=5.27"></script>
-<script src="core/phone.js?v=5.27"></script>
-<script src="core/memory.js?v=5.27"></script>
-<script src="core/engine.js?v=5.27"></script>
-<script src="core/api.js?v=5.27"></script>
-<script src="core/savetree.js?v=5.27"></script>
-<script src="core/imgnet.js?v=5.27"></script>
-<script src="core/opening.js?v=5.27"></script>
-<script src="core/storage.js?v=5.27"></script>
-<script src="core/editors.js?v=5.27"></script>
-<script src="core/customsprites.js?v=5.27"></script>
-<script src="app/app.js?v=5.27"></script>
+<script src="core/crash.js?v=5.28"></script>
+<script src="core/cardres.js?v=5.28"></script>
+<!-- 仓库里的卡修订包：机制 + juus 卡的数据（换立绘 / 删挂链 / 补世界书 / 加开场，见 core/cardpatch.js） -->
+<script src="core/cardpatch.js?v=5.28"></script>
+<script src="resource/juus-patch.js?v=5.28"></script>
+<script src="core/tokens.js?v=5.28"></script>
+<script src="core/vector.js?v=5.28"></script>
+<script src="core/imagegen.js?v=5.28"></script>
+<script src="core/snapshot.js?v=5.28"></script>
+<script src="core/gallery.js?v=5.28"></script>
+<script src="core/cg.js?v=5.28"></script>
+<script src="core/resolver.js?v=5.28"></script>
+<script src="core/worldbook.js?v=5.28"></script>
+<script src="core/regex.js?v=5.28"></script>
+<script src="core/prompt.js?v=5.28"></script>
+<script src="core/script.js?v=5.28"></script>
+<script src="core/phone.js?v=5.28"></script>
+<script src="core/memory.js?v=5.28"></script>
+<script src="core/engine.js?v=5.28"></script>
+<script src="core/api.js?v=5.28"></script>
+<script src="core/savetree.js?v=5.28"></script>
+<script src="core/imgnet.js?v=5.28"></script>
+<script src="core/opening.js?v=5.28"></script>
+<script src="core/storage.js?v=5.28"></script>
+<script src="core/editors.js?v=5.28"></script>
+<script src="core/customsprites.js?v=5.28"></script>
+<script src="app/app.js?v=5.28"></script>
 </body>
 </html>
