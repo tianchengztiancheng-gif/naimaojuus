@@ -1203,6 +1203,19 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - **图库加载（v5.28.3）**：`ImgNet.thumbOf(url, w)` 给 wsrv 小图（direct / custom 模式返回 null）。app.js `sgFetch()` 按「缩略图 → ImgNet.candidates」挨个试，fetch 读流算进度（拿不到 content-length 或跨域读不了退回 `<img>`，进度条走马灯），成功存 blob 地址进 `sgCache`；缩略图的成败不记进 ImgNet 的直连统计。`sgEnqueue/sgPump` 并发 `SG_PAR = 3`；`sgWatch()` 用 IntersectionObserver 滚到才排队；`sgReset()`（换页 / 关图库）`sgGen++`、abort 在途请求。列表封面 w=400，角色页 w=480（q82）；大图 `SG_BIG = 1600`（q90，&we 不放大 = 原分辨率 webp，几百 KB；中转不通再拉 1MB 的原 PNG），先垫 480 的缓存再换（v5.28.5：以前大图直接拉原 PNG，直连被墙要等 45 秒，一直垫着模糊的小图）。每个地址最多等 25 秒。
 - 测试：`tools/e2e-patch.mjs`（25，合成的「juus」卡 + 拦截猫箱地址给占位图），`tools/unit/test-cardpatch.mjs`（22，含开场里的表情都在新立绘里），冒烟 [7k]。
 
+## 七·二十·六、立绘出入场修正（v5.28.7）
+
+用户反馈两件事：旁白一出来人就退场、画面变空；同一个人连着说话，点一下立绘没了（名字牌是她，画面上没她）。
+- `ScriptParser.toModules`（core/script.js）：
+  - **退场延后**：`<退场|…>`（含「全部」）不立刻清台，记进 `pendingExit`；下一句**非旁白**的台词（`flushExit(说话人)`）或下一个 `<登场>` 时才生效，
+    说话 / 登场的人自己从待退名单划掉。换地点、`<立绘|…>` 清掉待退名单。所以退场后紧跟的旁白里人还在。
+  - **说话的人一定上台**：以前 `explicit`（用过登场 / 退场）之后不再 `joinStage`，模型漏写登场的人说话没有立绘。现在不管 explicit，说话人都 join；
+    `甲&乙` 拆开两个都 join（表情只给第一个… 实际是谁的名字等于 `ev.who` 才带表情，合说时都不带）。`explicit` 变量留着但不再影响上台。
+- app.js `spriteBackups(s)`：`swap()` 的兜底从一张原皮变成一串（同表情其它差分 → 默认立绘前两张 → 当前服装平静 / 微笑 / 普通 / 开心 → 随便三张，最多 6 张），
+  挂一张换下一张，全挂才藏层。`makeChar()` 给 `.char` 加了 `data-who`（测试认人用）。
+- 测试：`tools/e2e-stage.mjs`（7，开场白当测试剧本，不用假接口；拿旧版 script.js 跑会挂 4 项），冒烟 [6n] 改了预期并加 4 项。
+- 超级奶猫（`D:\photo\超级奶猫`）的 script.js 是同一份的分叉，有 `opt.autoJoin`，退场延后还没搬过去。
+
 ## 七·二十·五、图库暂时下线（v5.28.6）
 
 用户试用后觉得「图库功能问题有点大」，先下线、改天再研究（具体问题还没说，下次先问清楚）。

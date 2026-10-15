@@ -196,7 +196,7 @@
     var skinOf = opt.skinOf || function () { return null; };
     var lockedOf = opt.lockedOf || function () { return null; };
     var maxStage = opt.maxStage || 4;
-    var modules = [], stage = [], explicit = false;
+    var modules = [], stage = [], explicit = false, pendingExit = [];
     var bg = { loc: opt.loc || '', period: opt.period || '' };
     var env = '', pendingChoices = null;
     var tick = 0;                 // 单调递增的"发言时刻"，用来决定谁最久没说话
@@ -223,6 +223,15 @@
       stage.push({ name: name, expr: (expr && expr !== '-') ? expr : '', last: ++tick });
     }
 
+    /** 让记着的退场生效；keep 里的人（正在说话 / 正在登场）不走，并且从待退名单里划掉 */
+    function flushExit(keep) {
+      if (!pendingExit.length) return;
+      keep = keep || [];
+      var go = pendingExit.filter(function (n) { return keep.indexOf(n) < 0; });
+      pendingExit = [];
+      if (go.length) stage = stage.filter(function (c) { return go.indexOf(c.name) < 0; });
+    }
+
     events.forEach(function (ev) {
       if (ev.type === 'bg') {
         /* 换了地点就清台 —— 上一个场景的人不该跟着到新地方。
@@ -230,23 +239,27 @@
         var moved = ev.loc && bg.loc && ev.loc !== bg.loc;
         bg = { loc: ev.loc, period: ev.period || bg.period };
         modules._lastBg = { loc: bg.loc, period: bg.period };
-        if (moved) { stage = []; explicit = false; }
+        if (moved) { stage = []; explicit = false; pendingExit = []; }
         return;
       }
       if (ev.type === 'env') { env = ev.text; return; }
       if (ev.type === 'choice') { pendingChoices = ev.options; return; }
       if (ev.type === 'exit') {
-        /* 全员退场：<退场|全部> / <退场|all> */
+        /* 退场不马上清，记下来，等下一句「有人说话」时再下场（v5.28.7）。
+           模型常在角色说完后、旁白描写前就写 <退场|她>，立刻清的话旁白一出来画面就空了；
+           先留着，旁白照常配着她，下一个人开口时她再走。
+           全员退场：<退场|全部> / <退场|all> */
         if (ev.cast.some(function (n) { return /^(全部|全员|所有人|all)$/i.test(n); })) {
-          stage = [];
+          stage.forEach(function (c) { if (pendingExit.indexOf(c.name) < 0) pendingExit.push(c.name); });
         } else {
-          stage = stage.filter(function (c) { return ev.cast.indexOf(c.name) < 0; });
+          ev.cast.forEach(function (n) { if (pendingExit.indexOf(n) < 0) pendingExit.push(n); });
         }
         explicit = true;
         return;
       }
       if (ev.type === 'enter') {
         explicit = true;
+        flushExit(ev.cast.map(function (c) { return c.name; }));
         ev.cast.forEach(function (c) {
           if (!roster[c.name]) return;
           var exist = stage.filter(function (x) { return x.name === c.name; })[0];
@@ -264,6 +277,7 @@
       }
       if (ev.type === 'stage') {
         explicit = true;
+        pendingExit = [];
         stage = ev.cast.filter(function (c) { return roster[c.name]; })
                        .slice(0, maxStage)
                        .map(function (c) { return { name: c.name, expr: c.expr, last: ++tick }; });
@@ -271,14 +285,14 @@
       }
       if (ev.type !== 'say') return;
 
-      if (roster[ev.who]) {
-        if (explicit) {
-          var slot = stage.filter(function (c) { return c.name === ev.who; })[0];
-          if (slot && ev.expr && ev.expr !== '-') slot.expr = ev.expr;
-        } else {
-          joinStage(ev.who, ev.expr);
-        }
-      }
+      /* 有人开口（旁白不算）：先让记着的退场生效 —— 说话的人自己除外（刚说要走又接着说话，就当没走） */
+      if (!ev.narration) flushExit(String(ev.who || '').split(/[&＆]/).map(function (n) { return n.trim(); }));
+      /* 说话的人一定在台上（v5.28.7）：以前用过 <登场>/<退场> 之后就不自动上台了，
+         模型漏写登场的人说话时没有立绘 —— 名字牌是她，画面上却没有她 */
+      String(ev.who || '').split(/[&＆]/).forEach(function (n) {
+        n = n.trim();
+        if (roster[n]) joinStage(n, n === ev.who ? ev.expr : '');
+      });
       modules.push({
         who: ev.who, expr: ev.expr, text: ev.text, narration: ev.narration,
         bg: { loc: bg.loc, period: bg.period }, env: env,

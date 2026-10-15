@@ -133,6 +133,7 @@
   function makeChar(name) {
     var el = document.createElement('div');
     el.className = 'char entering';
+    el.dataset.who = name;                 // 调试 / 测试认人用
     var a = document.createElement('div'), b = document.createElement('div');
     a.className = b.className = 'layer';
     [a, b].forEach(function (lay) {
@@ -389,7 +390,9 @@
   function swap(rec, url, isEnter, fallbackUrl) {
     return new Promise(function (res) {
       var img = rec.back.querySelector('img'), settled = false;
-      var lay = rec.back, triedFallback = false;
+      var lay = rec.back;
+      /* 备用图：可以是一张，也可以是一串（v5.28.7：这张挂了按顺序换下一张，全挂了才藏） */
+      var fbs = [].concat(fallbackUrl || []).filter(function (u, i, a) { return u && u !== url && a.indexOf(u) === i; });
       /* 换图令牌。1.5 秒内同一角色换两次时，两次 swap 操作的是**同一个 <img>**，
          后一次会把前一次的 onload 覆盖掉 —— 于是前一次永远 settle 不了，
          它那个 1500ms 兜底定时器照常到点，把旧立绘重新推回前台，
@@ -425,14 +428,13 @@
       function failed() {
         if (dead()) return giveUp();
         noteImgFail(rec.name, img.getAttribute('src'));
-        /* 先退原皮 */
-        if (!triedFallback && fallbackUrl && fallbackUrl !== url) {
-          triedFallback = true;
+        /* 按顺序换备用图（同表情的另一张 → 原皮 → 默认立绘 → 平静 / 微笑） */
+        if (fbs.length) {
           lay.style.visibility = 'hidden';
-          img.src = ImgNet.srcFor(fallbackUrl);   // onload/onerror 还挂着，会再走一轮
+          img.src = ImgNet.srcFor(fbs.shift());   // onload/onerror 还挂着，会再走一轮
           return;
         }
-        /* 原皮也挂了：藏掉这一层，剧情照常推进 */
+        /* 备用的也全挂了：藏掉这一层，剧情照常推进 */
         img.onload = img.onerror = null;
         lay.style.visibility = 'hidden';
         reveal();
@@ -452,6 +454,26 @@
     });
   }
 
+  /**
+   * 立绘挂了换哪几张（v5.28.7）。以前只退一张原皮，原皮也挂就整个人消失 ——
+   * 名字牌写着她在说话，画面上却没有她。现在多备几张，按「越像越先」排：
+   * 同表情的其它差分 → 默认立绘 / 原皮 → 当前服装的平静 / 微笑 / 普通 → 这套服装随便一张。最多 6 张。
+   */
+  function spriteBackups(s) {
+    var out = [], R = window.RESOURCE || {};
+    function add(u) { if (u && out.indexOf(u) < 0 && u !== s.url) out.push(u); }
+    (s.urls || []).forEach(add);
+    var d = R.defaults && R.defaults[s.who];
+    (Array.isArray(d) ? d.slice(0, 2) : d ? [d] : []).forEach(add);
+    var ch = R.characters && R.characters[s.who];
+    if (ch && ch.outfits) {
+      var o = ch.outfits[s.outfit] || ch.outfits[ch.default_outfit] || ch.outfits[Object.keys(ch.outfits)[0]] || {};
+      ['平静', '微笑', '普通', '开心'].forEach(function (e) { if (o[e]) add(o[e][0]); });
+      Object.keys(o).slice(0, 3).forEach(function (e) { if (o[e]) add(o[e][0]); });
+    }
+    return out.slice(0, 6);
+  }
+
   function applyStage(sprites) {
     var names = new Set(sprites.map(function (s) { return s.who; }));
     live.forEach(function (rec, name) {
@@ -464,9 +486,7 @@
     sprites.forEach(function (s) {
       var isNew = !live.has(s.who);
       var rec = live.get(s.who) || makeChar(s.who);
-      /* 死链时退到原皮：urls[0] 就是 index 0 那张 */
-      var base = (s.urls && s.urls.length) ? s.urls[0] : null;
-      if (rec.url !== s.url) { rec.url = s.url; jobs.push(swap(rec, s.url, isNew, base)); }
+      if (rec.url !== s.url) { rec.url = s.url; jobs.push(swap(rec, s.url, isNew, spriteBackups(s))); }
     });
     stageNow = sprites;
     layout();

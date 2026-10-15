@@ -444,11 +444,23 @@ console.log('\n[6n] 出入场与立绘稳定');
   const E8 = new w.Engine();
   const r8 = E8.processOutput('<Gal>\n『✨ 08:00 · 教室 · 晴 ✨』|旁白|-|\n' +
     '早。|Z23|微笑|\n你也早。|Z52|平静|\n我先走了。|Z23|不满|\n<退场|Z23>\n' +
-    '她走了。|旁白|-|\n<登场|长门:微笑>\n我来了。|长门|微笑|\n<退场|全部>\n空了。|旁白|-|\n</Gal>');
+    '她走了。|旁白|-|\n<登场|长门:微笑>\n我来了。|长门|微笑|\n<退场|全部>\n空了。|旁白|-|\n……|指挥官|-|\n</Gal>');
   const at = i => r8.modules[i].stage.map(c => c.name).join('、');
-  ok('退场指令生效', at(4) === 'Z52', at(4));
-  ok('登场指令生效', at(5).indexOf('长门') >= 0, at(5));
-  ok('全部退场生效', at(6) === '', at(6) || '（空台）');
+  ok('退场后紧跟的旁白：人先留着（不空台）', at(4) === 'Z23、Z52', at(4));
+  ok('下一个人登场 / 开口时，退场才生效', at(5) === 'Z52、长门', at(5));
+  ok('全部退场：旁白时还留着，有人开口才清空', at(6) === 'Z52、长门' && at(7) === '', at(6) + ' / ' + (at(7) || '（空台）'));
+})();
+(() => {
+  /* v5.28.7：用过 <登场> 之后，没写登场的人开口也要上台；刚写了退场的人接着说话就当没走 */
+  const E10 = new w.Engine();
+  const r = E10.processOutput('<Gal>\n『✨ 08:00 · 教室 · 晴 ✨』|旁白|-|\n<登场|Z23:微笑>\n早。|Z23|微笑|\n' +
+    '我来晚了。|Z52|平静|\n我先走了……|Z23|不满|\n<退场|Z23>\n算了，再说一句。|Z23|微笑|\n她又补了一句。|旁白|-|\n' +
+    '一起说！|Z23&Z52|开心|\n</Gal>');
+  const at = i => r.modules[i].stage.map(c => c.name).join('、');
+  ok('用过登场后，没登场的人开口也上台', at(2) === 'Z23、Z52', at(2));
+  ok('写了退场又接着说话：人还在', at(4).indexOf('Z23') >= 0 && at(5).indexOf('Z23') >= 0, at(4) + ' / ' + at(5));
+  ok('两人一起说（A&B）：两个都在台上', at(6) === 'Z23、Z52', at(6));
+  ok('说话的人每句都有立绘', r.modules.every(m => m.narration || String(m.who).split('&').every(n => m.stage.some(c => c.name === n))));
 })();
 (() => {
   const E9 = new w.Engine();
@@ -993,7 +1005,7 @@ console.log('\n[6w4] 存档槽：每个周目各存各的');
      (src.match(/restoreFrom\(/g) || []).length + ' 处');
   /* 死链回退 */
   ok('swap 接收原皮兜底参数', /function swap\(rec, url, isEnter, fallbackUrl\)/.test(src));
-  ok('死链会退到原皮', /triedFallback/.test(src));
+  ok('死链会按顺序换备用图（同表情另一张 → 原皮 / 默认立绘 → 平静）', /function spriteBackups\(s\)/.test(src) && /fbs\.shift\(\)/.test(src));
   ok('原皮也挂就隐藏整层', /visibility = 'hidden'[\s\S]{0,120}reveal\(\)/.test(src));
   ok('记录死链供排查', /function noteImgFail/.test(src));
   ok('缓存命中也判 naturalWidth（complete 为真但宽 0 = 失败）',
