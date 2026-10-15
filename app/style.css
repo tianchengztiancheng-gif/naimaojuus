@@ -1053,3 +1053,15 @@ html:not(.m-mobile) .m-only{display:none}
 .sg-nav:hover{background:rgba(255,255,255,.22)}
 .sg-vx{position:absolute;top:16px;right:16px;width:40px;height:40px;border-radius:999px;cursor:pointer;
   border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;font-size:22px}
+
+/* ===== 有新版本（v5.28.4） ===== */
+#ver-bar{position:fixed;left:50%;top:calc(var(--safe-t, 0px) + 10px);transform:translateX(-50%);z-index:9998;
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;max-width:calc(100% - 20px);padding:10px 12px 10px 16px;
+  border-radius:12px;border:1px solid rgba(141,212,224,.55);background:rgba(10,22,32,.94);backdrop-filter:blur(8px);
+  box-shadow:0 10px 30px rgba(0,0,0,.45);color:#e6f4fb;font-size:13px}
+#ver-bar[hidden]{display:none}
+#ver-bar b{color:#8dd4e0;letter-spacing:.04em}
+#ver-bar span{color:#9fb8c6;flex:1 1 200px}
+#ver-bar button{padding:6px 14px;border-radius:999px;border:1px solid rgba(141,212,224,.45);background:transparent;color:#cfe9f3;font:inherit;cursor:pointer}
+#ver-bar button.primary{background:linear-gradient(100deg,#46b6cf,#2d93ad);border-color:transparent;color:#fff;font-weight:600}
+.ver-check{margin-left:6px;padding:0;border:0;background:none;color:#7cc7da;font:inherit;font-size:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}

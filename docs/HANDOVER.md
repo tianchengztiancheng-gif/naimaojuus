@@ -1203,6 +1203,17 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - **图库加载（v5.28.3）**：`ImgNet.thumbOf(url, w)` 给 wsrv 小图（direct / custom 模式返回 null）。app.js `sgFetch()` 按「缩略图 → ImgNet.candidates」挨个试，fetch 读流算进度（拿不到 content-length 或跨域读不了退回 `<img>`，进度条走马灯），成功存 blob 地址进 `sgCache`；缩略图的成败不记进 ImgNet 的直连统计。`sgEnqueue/sgPump` 并发 `SG_PAR = 3`；`sgWatch()` 用 IntersectionObserver 滚到才排队；`sgReset()`（换页 / 关图库）`sgGen++`、abort 在途请求。列表封面 w=320，角色页 w=360，大图 w=0（原图），大图先垫 360 的缓存再换。
 - 测试：`tools/e2e-patch.mjs`（25，合成的「juus」卡 + 拦截猫箱地址给占位图），`tools/unit/test-cardpatch.mjs`（22，含开场里的表情都在新立绘里），冒烟 [7k]。
 
+## 七·二十一、版本更新提示（v5.28.4）
+
+- 页面版本：`index.html` 的 `<meta name="gal-version">`，app.js 顶上读成 `APP_VER`；线上最新：仓库根目录 `version.json`（`{version, notes}`）。
+  **发版四处同号**：meta、所有 `?v=`、`version.json`、`package.json`（冒烟 [7l] 查）。
+- app.js「版本更新」一节：`checkUpdate(manual)` 用 `fetch('version.json?t=…', {cache:'no-store'})`；`verNewer()` 按数字逐段比（5.28.10 > 5.28.9）。
+  打开 3 秒、每 30 分钟、`visibilitychange` 回到前台且距上次 > 5 分钟各查一次；file:// 和 localhost 不查（手动点会说明；冒烟测试跑在 http://localhost，所以它的 fetch 桩不会被更新检查吃掉）。
+  有新版 → `#ver-bar`；「稍后」记 `verSkip`（同版本自动检查不再弹，手动仍弹）；「立即更新」→ 在游戏里先 `GalStore.saveSlot(autoSlotId(), snapshot())`，
+  然后 `location.replace(当前路径 + ?u=新版本 + 原参数)`——网址变了浏览器不会用缓存的 index.html，里面的 `?v=` 跟着换新。回来后 `history.replaceState` 去掉 `u`、toast「已更新到」。
+- 手动入口：开场引导左下 `#boot-vercheck`、手机设置侧栏底部 `[data-vercheck]`（两处手机版式都藏着，手机上靠自动检查）。
+- 测试：`tools/e2e-update.mjs`（11，http://gal.test 路由，version.json 由测试给），冒烟 [7l]。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

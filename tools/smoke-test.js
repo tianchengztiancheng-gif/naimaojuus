@@ -1435,6 +1435,16 @@ console.log('\n[7k] 卡修订包 / 立绘图库（v5.28）');
   ok('关掉', d.getElementById('sg-modal').hidden);
 }
 
+console.log('\n[7l] 版本号（v5.28.4）');
+{
+  const meta = (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/name="gal-version" content="([^"]+)"/) || [])[1];
+  const vj = JSON.parse(fs.readFileSync(path.join(ROOT, 'version.json'), 'utf8')).version;
+  const pj = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  ok('index.html / version.json / package.json 三处版本号一致', !!meta && meta === vj && vj === pj, meta + ' / ' + vj + ' / ' + pj);
+  ok('index.html 里的 ?v= 都是这个版本号（不然发版后浏览器拿缓存的旧文件）',
+     (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/\?v=[\d.]+/g) || []).every(x => x === '?v=' + meta));
+}
+
 console.log('\n[8] 运行期未捕获错误');
 ok('无 window error', errors.length === 0, errors.slice(0, 3).join(' | '));
 

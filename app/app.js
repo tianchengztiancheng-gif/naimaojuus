@@ -7,6 +7,8 @@
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
+  /* 页面自己的版本号（index.html 的 <meta name="gal-version">），「版本更新」一节和设置页底部用 */
+  var APP_VER = ((document.querySelector('meta[name="gal-version"]') || {}).content || '').trim();
   var PA2 = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
   var eng = new Engine();
   var qi = 0, typing = false, typer = null, pending = '', busy = false;
@@ -2064,7 +2066,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.28.3</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v'+APP_VER+' <button type="button" class="linkbtn ver-check" data-vercheck>检查更新</button></div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -5719,6 +5721,97 @@
       else $('sg-cap').innerHTML += '<small class="bad">原图加载失败</small>';
     }, function () {});
   }
+  /* ============================================================
+     版本更新（v5.28.4）
+     GitHub Pages 会让浏览器缓存页面 10 分钟，手机浏览器有时更久 —— 发了新版，有人还一直玩旧的。
+     页面自己的版本号写在 index.html 的 <meta name="gal-version">；仓库根目录的 version.json 是线上最新版本。
+     打开 3 秒后、之后每 30 分钟、切回这个标签页（距上次查过了 5 分钟）各查一次；线上更新 → 顶上出一条「有新版本」，
+     点「立即更新」：在游戏里的先存一下，然后换个网址（加 ?u=新版本号）重新打开 —— 网址变了浏览器就不会用缓存的旧页面，
+     页面里的 js / css 都带 ?v=版本号，也跟着换新。本地双击打开（file://）和 localhost 不查。
+     ============================================================ */
+  var verLast = 0, verSkip = '', verBusy = false;
+  function verNewer(a, b) {
+    var x = String(a || '').split('.').map(Number), y = String(b || '').split('.').map(Number);
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var d = (x[i] || 0) - (y[i] || 0);
+      if (d) return d > 0;
+    }
+    return false;
+  }
+  function verUrl(v) {
+    var q = new URLSearchParams(location.search);
+    q.set('u', v);
+    return location.pathname + '?' + q.toString() + location.hash;
+  }
+  function verGo(v) {
+    var go = function () { location.replace(verUrl(v)); };
+    try {
+      if (eng.log.length || eng.history.length) {
+        GalStore.saveSlot(autoSlotId(), snapshot()).then(go, go);
+        setTimeout(go, 2500);                  // 存档卡住也别一直不刷新
+        return;
+      }
+    } catch (e) {}
+    go();
+  }
+  function verBar(j) {
+    var bar = $('ver-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'ver-bar';
+      bar.setAttribute('role', 'alert');
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = '<b>有新版本 v' + esc(j.version) + '</b><span>你现在用的是 v' + esc(APP_VER) +
+      (j.notes ? ' · ' + esc(j.notes) : '') + '</span>' +
+      '<button type="button" class="primary" id="ver-go">立即更新</button><button type="button" id="ver-later">稍后</button>';
+    bar.hidden = false;
+    $('ver-go').onclick = function () { this.disabled = true; this.textContent = '正在更新…'; verGo(j.version); };
+    $('ver-later').onclick = function () { verSkip = j.version; bar.hidden = true; };
+  }
+  /** @param {boolean} manual 玩家点了「检查更新」：没有新版也要说一声 */
+  function checkUpdate(manual) {
+    /* 本地双击打开、本机调试（localhost）不查：文件就在手边，换文件就是更新 */
+    if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
+      if (manual) toast('现在是本地打开的，不用在线更新：下载新版的文件替换掉就行。', '', 5000);
+      return Promise.resolve(null);
+    }
+    if (verBusy || !window.fetch) return Promise.resolve(null);
+    verBusy = true; verLast = Date.now();
+    return fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        verBusy = false;
+        if (!j || !j.version) { if (manual) toast('没查到版本信息，稍后再试。', 'warn', 4000); return null; }
+        if (verNewer(j.version, APP_VER)) {
+          if (manual || j.version !== verSkip) verBar(j);
+        } else if (manual) toast('已经是最新版 v' + APP_VER, 'ok', 3000);
+        return j;
+      }, function () {
+        verBusy = false;
+        if (manual) toast('检查更新失败：连不上网站。', 'warn', 4000);
+        return null;
+      });
+  }
+  /* 更新完回来，网址里的 ?u= 去掉（别的参数留着） */
+  try {
+    var vq = new URLSearchParams(location.search);
+    if (vq.has('u')) {
+      if (vq.get('u') === APP_VER) setTimeout(function () { toast('已更新到 v' + APP_VER, 'ok', 3500); }, 800);
+      vq.delete('u');
+      history.replaceState(null, '', location.pathname + (vq.toString() ? '?' + vq.toString() : '') + location.hash);
+    }
+  } catch (e) {}
+  setTimeout(function () { checkUpdate(false); }, 3000);
+  setInterval(function () { checkUpdate(false); }, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && Date.now() - verLast > 5 * 60 * 1000) checkUpdate(false);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#boot-vercheck,[data-vercheck]');
+    if (b) { e.preventDefault(); checkUpdate(true); }
+  });
+
   $('btn-gallery').onclick = openGallery;
   /* 相册里也有一个入口：手机竖屏工具栏放不下第 9 个键，❖ 在竖屏是藏起来的 */
   if ($('cg-sg')) $('cg-sg').onclick = function () { $('cg-panel').hidden = true; openGallery(); };
@@ -5807,6 +5900,7 @@
   /* 调试钩子：浏览器控制台里可以 __gal.eng.vars / __gal.eng.pool 看内部状态，
      冒烟测试也靠它注入角色卡。 */
   window.__gal = {
+    checkUpdate: function (m) { return checkUpdate(m); }, appVer: APP_VER, verNewer: verNewer,
     eng: eng,
     reload: function () { renderPhone(); renderBook(); renderPreset(); renderVars(); },
     goTo: function (i) { goTo(i, { instant: true }); },
