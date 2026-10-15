@@ -45,14 +45,15 @@ const card = (name) => ({ spec: 'chara_card_v2', data: { name, first_mes: '『�
 fs.writeFileSync(OUT + '/patch-juus.json', JSON.stringify(card('juus 之奶猫崛起')));
 fs.writeFileSync(OUT + '/patch-other.json', JSON.stringify(card('别的卡')));
 
+const imgReq = [];
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
 /* 修订包里的立绘是猫箱地址：拦下来给本地占位图（这台机器连不上猫箱） */
 await ctx.route('**/*', r => {
   const u = r.request().url();
   if (u.startsWith('file:') || u.startsWith('data:')) return r.continue();
-  if (/catbox|wsrv|huggingface/.test(u)) return r.fulfill({ status: 200, contentType: 'image/svg+xml',
-    body: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="700"><rect width="300" height="700" fill="#5b4a8c"/><text x="150" y="120" font-size="28" text-anchor="middle" fill="#fff">${u.split('/').pop().slice(0, 10)}</text></svg>`) });
+  if (/catbox|wsrv|huggingface/.test(u)) { imgReq.push(u); return r.fulfill({ status: 200, contentType: 'image/svg+xml', headers: { 'Access-Control-Allow-Origin': '*' },
+    body: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="700"><rect width="300" height="700" fill="#5b4a8c"/><text x="150" y="120" font-size="28" text-anchor="middle" fill="#fff">${u.split('/').pop().slice(0, 10)}</text></svg>`) }); }
   return r.abort();
 });
 const p = await ctx.newPage();
@@ -111,7 +112,10 @@ ok('贾维斯和雅努斯同台，用的是新立绘', st.chars.length === 2 && 
 await p.screenshot({ path: OUT + '/patch-opening.png' });
 
 console.log('\n[C 立绘图库]');
-await p.click('#btn-gallery'); await p.waitForTimeout(500);
+imgReq.length = 0;
+await p.click('#btn-gallery'); await p.waitForTimeout(1500);
+const cov = await E(() => ({ boxes: document.querySelectorAll('.sg-char .ph[data-src]').length, ok: document.querySelectorAll('.sg-char .ph.sg-ok img').length }));
+ok('列表页：每人一张封面，走缩略图（wsrv 小图），不拉原图', cov.ok >= 1 && imgReq.length >= 1 && imgReq.every(u => /wsrv\.nl.*&w=320/.test(u)), JSON.stringify(cov) + ' ' + imgReq.slice(0, 2).join(' '));
 const g1 = await E(() => ({ open: !document.getElementById('sg-modal').hidden, names: [...document.querySelectorAll('.sg-char b')].map(x => x.textContent),
   stat: document.getElementById('sg-stat').textContent }));
 /* 本地装了素材包（resource/juus）时角色会多，看包含关系 */
@@ -120,10 +124,13 @@ ok('角色列表：有表情差分的都在，删了差分的不在', g1.open &&
 await p.screenshot({ path: OUT + '/patch-gallery.png' });
 await p.fill('#sg-q', '谢菲'); await p.waitForTimeout(200);
 ok('搜索', (await p.$$('.sg-char')).length === 1);
-await p.click('.sg-char'); await p.waitForTimeout(500);
+imgReq.length = 0;
+await p.click('.sg-char'); await p.waitForTimeout(1500);
 const g2 = await E(() => ({ title: document.getElementById('sg-title').textContent, n: document.querySelectorAll('.sg-pic').length,
-  first: document.querySelector('.sg-pic span').textContent, lazy: document.querySelector('.sg-pic img').loading, stat: document.getElementById('sg-stat').textContent }));
-ok('点进谢菲尔德：按表情标着', g2.title === '谢菲尔德' && g2.n >= 1 && /微笑/.test(g2.first) && g2.lazy === 'lazy', JSON.stringify(g2));
+  first: document.querySelector('.sg-pic span').textContent, loaded: document.querySelectorAll('.sg-pic .ph.sg-ok img').length,
+  blob: /^blob:/.test((document.querySelector('.sg-pic .ph.sg-ok img') || {}).src || ''), bars: document.querySelectorAll('.sg-pic .sg-bar').length,
+  stat: document.getElementById('sg-stat').textContent }));
+ok('点进谢菲尔德：按表情标着', g2.title === '谢菲尔德' && g2.n >= 1 && /微笑/.test(g2.first) && g2.loaded === g2.n && g2.blob && g2.bars === g2.n, JSON.stringify(g2));
 await p.screenshot({ path: OUT + '/patch-gallery-char.png' });
 await p.click('.sg-pic[data-sgi="1"]'); await p.waitForTimeout(400);
 ok('点图看大图', await E(() => !document.getElementById('sg-view').hidden && /微笑 2\/2/.test(document.getElementById('sg-cap').textContent)));
@@ -137,6 +144,19 @@ await p.keyboard.press('Escape'); await p.waitForTimeout(150);
 ok('Esc 关大图', await E(() => document.getElementById('sg-view').hidden && !document.getElementById('sg-modal').hidden));
 await p.click('#sg-back'); await p.waitForTimeout(200);
 ok('‹ 回角色列表', await E(() => document.querySelectorAll('.sg-char').length >= 1 && document.getElementById('sg-back').hidden));
+await p.fill('#sg-q', '贾维斯'); await p.waitForTimeout(300);
+imgReq.length = 0;
+await p.click('.sg-char'); await p.waitForTimeout(2500);
+const g3 = await E(() => ({ n: document.querySelectorAll('.sg-pic').length, ok: document.querySelectorAll('.sg-pic .ph.sg-ok').length }));
+ok('点进贾维斯才拉她的差分：缩略图，排队拉', imgReq.length >= 3 && imgReq.length <= g3.n && imgReq.every(u => /wsrv\.nl.*&w=360/.test(u)) && g3.ok >= 3,
+   imgReq.length + '/' + g3.n + ' ' + imgReq[0]);
+imgReq.length = 0;
+await p.click('.sg-pic[data-sgi="0"]'); await p.waitForTimeout(1200);
+ok('大图拉的是原图（不是缩略图），拉完进度条收起', imgReq.some(u => /files\.catbox\.moe\/\w+\.png$/.test(u) || /wsrv\.nl.*&w=2048/.test(u)) &&
+   await E(() => document.getElementById('sg-vbar').hidden && /^blob:/.test(document.getElementById('sg-img').src)), imgReq.join(' '));
+await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+await p.click('#sg-back'); await p.waitForTimeout(200);
+await p.fill('#sg-q', ''); await p.waitForTimeout(200);
 await p.keyboard.press('Escape'); await p.waitForTimeout(150);
 ok('Esc 关图库', await E(() => document.getElementById('sg-modal').hidden));
 

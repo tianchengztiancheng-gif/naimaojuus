@@ -2064,7 +2064,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.28.1</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.28.3</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -5506,8 +5506,138 @@
     b.hidden = !n;
     if ($('boot-gallery-n')) $('boot-gallery-n').textContent = n + ' 位';
   }
-  function sgImg(url) {
-    return '<img loading="lazy" decoding="async" alt="" src="' + esc(ImgNet.srcFor(url)) + '" onerror="this.classList.add(\'bad\')">';
+  /* ---------- 图库的图怎么拉（v5.28.1） ----------
+     以前列表页 70 多张封面、角色页几十张原图（一张 1MB 多）一起发请求，网慢的时候半天一张都出不来，也看不出卡在哪。
+     现在：
+       · 封面和缩略图走 ImgNet.thumbOf()（wsrv.nl 缩成小 webp，二三十 KB），中转不通再拉原图
+       · 一次最多同时拉 SG_PAR 张，按在页面上的先后排队；滚到才排进去（IntersectionObserver）
+       · 每张都有进度条：fetch 读流算百分比；服务器不给长度、或者不让跨域读的，退回 <img> + 走马灯式的条
+       · 离开这一页（返回 / 换服装 / 关掉）就把没拉完的全停掉
+       · 拉过的存成 blob 地址，同一次打开里来回切不重新下
+       · 大图看的是原图，也有进度条，先垫着缩略图 */
+  var SG_PAR = 3, sgQ = [], sgBusy = 0, sgGen = 0, sgCache = {}, sgObs = null, sgAborts = [];
+  function sgCands(url, w) {
+    var out = [], t = w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w) : null;
+    if (t) out.push(t);
+    (ImgNet.candidates ? ImgNet.candidates(url) : [ImgNet.srcFor(url)]).forEach(function (c) { if (out.indexOf(c) < 0) out.push(c); });
+    return out;
+  }
+  /** 拉一张：按候选地址挨个试，onProg(0~1 或 -1 = 不知道进度)。resolve 能用的地址（blob: 或原地址），全挂了 resolve null */
+  function sgFetch(url, w, onProg, gen) {
+    var key = url + '|' + (w || 0);
+    if (sgCache[key]) { onProg(1); return Promise.resolve(sgCache[key]); }
+    var cands = sgCands(url, w);
+    function viaImg(src) {
+      return new Promise(function (res) {
+        onProg(-1);
+        var im = new Image(), done = false;
+        var t = setTimeout(function () { if (!done) { done = true; im.src = ''; res(null); } }, 45000);
+        im.onload = function () { if (!done) { done = true; clearTimeout(t); res(src); } };
+        im.onerror = function () { if (!done) { done = true; clearTimeout(t); res(null); } };
+        im.src = src;
+      });
+    }
+    function viaFetch(src) {
+      if (!window.fetch || !window.ReadableStream) return viaImg(src);
+      var ac = window.AbortController ? new AbortController() : null;
+      if (ac) sgAborts.push(ac);
+      var timer = setTimeout(function () { if (ac) ac.abort(); }, 45000);
+      return fetch(src, ac ? { signal: ac.signal } : {}).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var total = +r.headers.get('content-length') || 0;
+        if (!r.body || !r.body.getReader) return r.blob();
+        var reader = r.body.getReader(), got = 0, parts = [];
+        onProg(total ? 0 : -1);
+        return (function pump() {
+          return reader.read().then(function (x) {
+            if (gen !== sgGen) { try { reader.cancel(); } catch (e) {} throw new Error('stale'); }
+            if (x.done) return new Blob(parts, { type: r.headers.get('content-type') || 'image/png' });
+            parts.push(x.value); got += x.value.length;
+            if (total) onProg(Math.min(0.99, got / total));
+            return pump();
+          });
+        })();
+      }).then(function (blob) {
+        clearTimeout(timer);
+        if (!blob || !blob.size || !/^image\//.test(blob.type || 'image/')) return null;
+        return URL.createObjectURL(blob);
+      }, function (e) {
+        clearTimeout(timer);
+        if (e && e.message === 'stale') throw e;
+        /* 不让跨域读（自定义中转常见）：退回 <img>，只是没有百分比 */
+        if (e && e.name === 'TypeError') return viaImg(src);
+        return null;
+      });
+    }
+    var thumb = w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w) : null, k = 0;
+    function next() {
+      if (gen !== sgGen) return Promise.reject(new Error('stale'));
+      if (k >= cands.length) return Promise.resolve(null);
+      var src = cands[k++];
+      return viaFetch(src).then(function (got) {
+        /* 缩略图的成败不算进图片网络的统计（那是舞台判断「直连通不通」用的） */
+        if (src !== thumb) { try { ImgNet.note(src, !!got); } catch (e) {} }
+        if (got) { sgCache[key] = got; onProg(1); return got; }
+        return next();
+      });
+    }
+    return next();
+  }
+  /** 一个格子：<div class="ph" data-src data-w> 里放图和进度条 */
+  function sgBox(url, w) {
+    return '<div class="ph sg-wait" data-src="' + esc(url) + '" data-w="' + (w || 0) + '">' +
+      '<i class="sg-bar"><b></b></i><em class="sg-pct"></em></div>';
+  }
+  function sgSetProg(box, p) {
+    var bar = box.querySelector('.sg-bar b'), pct = box.querySelector('.sg-pct');
+    if (!bar) return;
+    if (p < 0) { box.classList.add('sg-indet'); if (pct) pct.textContent = ''; return; }
+    box.classList.remove('sg-indet');
+    bar.style.width = Math.round(p * 100) + '%';
+    if (pct) pct.textContent = p >= 1 ? '' : Math.round(p * 100) + '%';
+  }
+  function sgEnqueue(box) {
+    if (box._q) return;
+    box._q = 1; box.classList.add('sg-queued');
+    sgQ.push(box); sgPump();
+  }
+  function sgPump() {
+    while (sgBusy < SG_PAR && sgQ.length) {
+      var box = sgQ.shift();
+      if (!box.isConnected) continue;
+      sgBusy++;
+      (function (box, gen) {
+        box.classList.remove('sg-queued');
+        sgSetProg(box, 0);
+        sgFetch(box.getAttribute('data-src'), +box.getAttribute('data-w'), function (p) { sgSetProg(box, p); }, gen)
+          .then(function (src) {
+            if (gen !== sgGen || !box.isConnected) return;
+            box.classList.remove('sg-wait', 'sg-indet');
+            if (!src) { box.classList.add('sg-bad'); box.querySelector('.sg-pct').textContent = '加载失败'; return; }
+            var img = document.createElement('img');
+            img.alt = ''; img.decoding = 'async'; img.src = src;
+            box.insertBefore(img, box.firstChild);
+            box.classList.add('sg-ok');
+          }, function () {})
+          .then(function () { if (gen === sgGen) { sgBusy--; sgPump(); } });
+      })(box, sgGen);
+    }
+  }
+  /** 换页：停掉没拉完的，排新一页的（滚到才排） */
+  function sgReset() {
+    sgGen++;
+    sgQ = []; sgBusy = 0;
+    sgAborts.forEach(function (a) { try { a.abort(); } catch (e) {} }); sgAborts = [];
+    if (sgObs) { sgObs.disconnect(); sgObs = null; }
+  }
+  function sgWatch(root) {
+    var boxes = PA2('#sg-body .ph[data-src]');
+    if (window.IntersectionObserver) {
+      sgObs = new IntersectionObserver(function (ents) {
+        ents.forEach(function (en) { if (en.isIntersecting) { sgEnqueue(en.target); sgObs.unobserve(en.target); } });
+      }, { root: root, rootMargin: '300px 0px' });
+      boxes.forEach(function (b) { sgObs.observe(b); });
+    } else boxes.forEach(sgEnqueue);
   }
   function openGallery() {
     closePhone();
@@ -5515,10 +5645,11 @@
     $('sg-modal').hidden = false;
     renderGallery();
   }
-  function closeGallery() { $('sg-modal').hidden = true; $('sg-view').hidden = true; }
+  function closeGallery() { sgReset(); $('sg-modal').hidden = true; $('sg-view').hidden = true; }
   function renderGallery() {
     var body = $('sg-body');
     $('sg-view').hidden = true;
+    sgReset();
     if (!SG.who) {
       var all = sgChars();
       var q = SG.q.trim();
@@ -5530,11 +5661,13 @@
         body.innerHTML = '<div class="sg-empty">还没有立绘。<br>先在开场引导里载入角色卡（juus 卡里有七十多位舰娘的表情差分）。</div>';
         return;
       }
+      /* 列表页每人只有一张固定封面（微笑 / 平静 / 开心优先），而且是小图；点进去才拉这个人的全部差分 */
       body.innerHTML = list.length ? '<div class="sg-grid">' + list.map(function (c) {
         return '<button type="button" class="sg-char" data-sgwho="' + esc(c.name) + '">' +
-          '<div class="ph">' + (c.thumb ? sgImg(c.thumb) : '') + '</div>' +
+          (c.thumb ? sgBox(c.thumb, 320) : '<div class="ph"></div>') +
           '<b>' + esc(c.name) + '</b><i>' + (c.outfits > 1 ? c.outfits + ' 套服装 · ' : '') + c.exprs + ' 种表情 · ' + c.pics + ' 张</i></button>';
       }).join('') + '</div>' : '<div class="sg-empty">没有名字里带「' + esc(q) + '」的角色。</div>';
+      sgWatch(body);
       return;
     }
     var C = RESOURCE.characters[SG.who];
@@ -5556,19 +5689,35 @@
     });
     $('sg-stat').textContent = SG.outfit + ' · ' + Object.keys(ex).length + ' 种表情 · ' + SG.list.length + ' 张';
     body.innerHTML = '<div class="sg-pics">' + SG.list.map(function (p, i) {
-      return '<button type="button" class="sg-pic" data-sgi="' + i + '"><div class="ph">' + sgImg(p.url) + '</div>' +
+      return '<button type="button" class="sg-pic" data-sgi="' + i + '">' + sgBox(p.url, 360) +
         '<span>' + esc(p.expr) + (p.of > 1 ? '<em>' + p.n + '/' + p.of + '</em>' : '') + '</span></button>';
     }).join('') + '</div>';
     body.scrollTop = 0;
+    sgWatch(body);
   }
+  /** 大图：先垫缩略图，原图拉完再换上；有进度条 */
+  var sgViewGen = 0;
   function sgShow(i) {
     if (!SG.list.length) return;
     SG.idx = (i + SG.list.length) % SG.list.length;
-    var p = SG.list[SG.idx];
-    $('sg-img').src = ImgNet.srcFor(p.url);
+    var p = SG.list[SG.idx], my = ++sgViewGen;
+    var img = $('sg-img'), bar = $('sg-vbar');
+    img.src = sgCache[p.url + '|360'] || '';
+    img.classList.add('sg-blur');
     $('sg-cap').innerHTML = esc(SG.who) + ' · ' + esc(p.expr) + (p.of > 1 ? ' ' + p.n + '/' + p.of : '') +
       '<small>' + (SG.idx + 1) + ' / ' + SG.list.length + '</small>';
     $('sg-view').hidden = false;
+    if (bar) { bar.hidden = false; bar.className = 'sg-vbar'; bar.firstChild.style.width = '0%'; }
+    sgFetch(p.url, 0, function (q) {
+      if (my !== sgViewGen || !bar) return;
+      if (q < 0) bar.classList.add('sg-indet');
+      else { bar.classList.remove('sg-indet'); bar.firstChild.style.width = Math.round(q * 100) + '%'; }
+    }, sgGen).then(function (src) {
+      if (my !== sgViewGen) return;
+      if (bar) bar.hidden = true;
+      if (src) { img.src = src; img.classList.remove('sg-blur'); }
+      else $('sg-cap').innerHTML += '<small class="bad">原图加载失败</small>';
+    }, function () {});
   }
   $('btn-gallery').onclick = openGallery;
   /* 相册里也有一个入口：手机竖屏工具栏放不下第 9 个键，❖ 在竖屏是藏起来的 */

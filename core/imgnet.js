@@ -124,6 +124,16 @@
     return relayFirst(u) ? [r, u] : [u, r];
   }
 
+  /**
+   * 小图（图库的封面和缩略图用，v5.28.1）：走 wsrv.nl 缩成长边 w 的 webp，一张 1MB 的立绘 → 二三十 KB。
+   * 「只直连」和自定义中转模式下不缩（玩家不想走 wsrv / 自定义中转不一定认尺寸参数），返回 null。
+   */
+  function thumbOf(u, w) {
+    if (!isRemote(u) || isOwnRelay(u) || cfg.mode === 'direct' || cfg.mode === 'custom') return null;
+    w = Math.max(64, Math.min(1024, w | 0 || 320));
+    return RELAY + encodeURIComponent(u) + '&w=' + w + '&h=' + Math.round(w * 2) + '&fit=inside&we&output=webp&q=80';
+  }
+
   function srcFor(u) {
     if (!isRemote(u)) return u;
     if (good[u]) return good[u];
@@ -383,7 +393,7 @@
     DEFAULTS: DEFAULTS, RELAY: RELAY,
     config: config, setConfig: setConfig,
     isRemote: isRemote, hostOf: hostOf, relayOf: relayOf, originOf: originOf,
-    candidates: candidates, srcFor: srcFor, next: next, note: note,
+    candidates: candidates, srcFor: srcFor, thumbOf: thumbOf, next: next, note: note,
     load: load, preload: preload, probe: probe, diagnose: diagnose,
     attach: attach, stats: stats, resetHosts: resetHosts,
     setMaxEdge: function (n) { maxEdge = Math.max(512, Math.min(4096, n | 0)); },
