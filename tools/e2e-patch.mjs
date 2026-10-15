@@ -2,8 +2,8 @@
  * tools/e2e-patch.mjs —— 端到端：juus 卡修订包（resource/juus-patch.js）+ 立绘图库（v5.28）
  *
  *   A. 一张合成的「juus」卡（结构照真卡，图全是本地 data:）载进去，修订包自动打上：
- *      贾维斯 / 雅努斯换成新立绘，巴尔的摩等删掉差分，威尔士删差分、留默认立绘，飞龙 / 苍龙各自和 META 对调原皮，
- *      世界书加贾维斯设定、换雅努斯差分、关掉删了差分的条目；名字不是 juus 的卡不打
+ *      贾维斯 / 雅努斯的立绘不动（新图先撤了），巴尔的摩等删掉差分，威尔士删差分、留默认立绘，飞龙 / 苍龙各自和 META 对调原皮，
+ *      世界书加贾维斯设定、关掉删了差分的条目；名字不是 juus 的卡不打
  *   B. 开场列表最后多了「医务室 · 贾维斯与雅努斯」，开局后两人在场、好感 80、立绘上台
  *   C. 立绘图库：角色列表、搜索、点进去全部立绘、大图翻页、Esc
  *
@@ -29,7 +29,7 @@ var EXPRESSION_MAP = {
   "布莱默顿": { "常服": { "微笑": "${px('#a55', '挂')}" } },
   "武藏": { "常服": { "微笑": "${px('#a55', '挂')}" } },
   "威尔士": { "常服": { "微笑": "${px('#a55', '挂')}" } },
-  "谢菲尔德": { "女仆装": { "微笑": "${px('#556', '谢菲')}" } } };
+  "谢菲尔德": { "女仆装": { "微笑": ["${px('#556', '谢菲1')}", "${px('#557', '谢菲2')}"], "害羞": "${px('#558', '谢菲3')}" } } };
 var SCENE_MAP = { "医院病房(白日)": "${bg('#dfe9ef')}", "港区(朝)": "${bg('#16304a')}" };
 var DEFAULT_SPRITES = { "威尔士": "${px('#a55', '威尔士默认')}", "飞龙": ["${px('#222', '飞龙META图')}", "${px('#2a5', '飞龙换装')}"], "飞龙·META": "${px('#2a5', '飞龙原版')}",
   "苍龙": ["${px('#111', '苍龙META图')}"], "苍龙·META": "${px('#25a', '苍龙原版')}", "巴尔的摩": "${px('#77a', '巴尔的摩默认')}",
@@ -75,8 +75,8 @@ const a = await E(() => {
     wbJa: pool.filter(e => e.comment === '雅努斯差分').map(e => e.content), balEntry: pool.filter(e => e.comment === '巴尔的摩差分').map(e => e.enabled),
     note: document.getElementById('assets-note').textContent, ops: [...document.getElementById('opening-sel').options].map(x => x.textContent) };
 });
-ok('贾维斯：72 张新立绘', a.jv === 72, a.jv);
-ok('雅努斯：整套换成新的 68 张（旧的「不安」没了）', a.ja === 68 && !a.jaExprs.includes('不安') && a.jaExprs.includes('猫耳卖萌'), a.ja + ' ' + a.jaExprs.slice(0, 5));
+ok('贾维斯：不加差分（新图先撤了），用卡里的默认立绘', a.jv === 0, a.jv);
+ok('雅努斯：还是卡里原来那套差分', a.ja === 2 && a.jaExprs.includes('不安'), a.ja + ' ' + a.jaExprs.slice(0, 5));
 ok('巴尔的摩 / 布莱默顿 / 武藏 / 威尔士的差分删了', a.gone.every(x => !x));
 ok('巴尔的摩的默认立绘还在（之后用它）', a.balt);
 ok('威尔士的默认立绘留着（链接是好的）', a.wales);
@@ -85,8 +85,8 @@ const sw = await E(() => { const d = u => atob(String(u).split(',')[1]); const D
 const dec = s => decodeURIComponent(escape(s));
 ok('飞龙、苍龙：原皮和 META 对调，换装皮肤不动', /飞龙原版/.test(dec(sw.fl)) && /飞龙换装/.test(dec(sw.fl1)) && /飞龙META图/.test(dec(sw.flm)) &&
    /苍龙原版/.test(dec(sw.cl)) && /苍龙META图/.test(dec(sw.clm)), JSON.stringify(sw).slice(0, 80));
-ok('世界书：贾维斯设定（长条目）+ 贾维斯差分', a.wbJ.length === 1 && a.wbJ[0] > 3000 && a.wbJd === 1, JSON.stringify(a.wbJ));
-ok('世界书：雅努斯差分换成新表情（同名只留一条）', a.wbJa.length === 1 && /猫耳卖萌/.test(a.wbJa[0]) && !/不安/.test(a.wbJa[0]));
+ok('世界书：贾维斯设定（长条目），不加贾维斯差分', a.wbJ.length === 1 && a.wbJ[0] > 3000 && a.wbJd === 0, JSON.stringify(a.wbJ));
+ok('世界书：雅努斯差分还是卡里原来的', a.wbJa.length === 1 && /不安/.test(a.wbJa[0]));
 ok('世界书：删了差分的条目关掉', a.balEntry.length === 1 && a.balEntry[0] === false);
 ok('引导页写着打了修订包', /修订包/.test(a.note), a.note.slice(-120));
 ok('开场列表最后多了「医务室 · 贾维斯与雅努斯」', a.ops.length === 3 && /医务室/.test(a.ops[2]), a.ops.join(' / '));
@@ -103,9 +103,9 @@ ok('两人在场、好感度 80，地点医院病房', v.人物 && v.人物.贾�
 const idx = await E(() => window.__gal.eng.log.findIndex(m => m.who === '雅努斯'));
 await E(i => window.__gal.goTo(i), idx); await p.waitForTimeout(1200);
 const st = await E(() => ({ chars: [...document.querySelectorAll('#sprites .char:not(.leaving)')].map(c => c.dataset.who || c.getAttribute('data-who')),
-  imgs: [...document.querySelectorAll('#sprites .char img')].map(i => i.src).filter(s => /catbox/.test(s)).length,
+  imgs: [...document.querySelectorAll('#sprites .char img')].map(i => i.src).filter(s => /^data:/.test(s)).length,
   spk: document.getElementById('speaker').textContent }));
-ok('贾维斯和雅努斯同台，用的是新立绘', st.chars.length === 2 && st.imgs >= 2 && st.spk === '雅努斯', JSON.stringify(st));
+ok('贾维斯和雅努斯同台（贾维斯用默认立绘）', st.chars.length === 2 && st.imgs >= 2 && st.spk === '雅努斯', JSON.stringify(st));
 await p.screenshot({ path: OUT + '/patch-opening.png' });
 
 console.log('\n[C 立绘图库]');
@@ -113,23 +113,23 @@ await p.click('#btn-gallery'); await p.waitForTimeout(500);
 const g1 = await E(() => ({ open: !document.getElementById('sg-modal').hidden, names: [...document.querySelectorAll('.sg-char b')].map(x => x.textContent),
   stat: document.getElementById('sg-stat').textContent }));
 /* 本地装了素材包（resource/juus）时角色会多，看包含关系 */
-ok('角色列表：有表情差分的都在，删了差分的不在', g1.open && ['贾维斯', '雅努斯', '谢菲尔德'].every(n => g1.names.includes(n)) &&
+ok('角色列表：有表情差分的都在，删了差分的不在', g1.open && ['雅努斯', '谢菲尔德'].every(n => g1.names.includes(n)) &&
    !['巴尔的摩', '布莱默顿', '武藏'].some(n => g1.names.includes(n)) && /位 · \d+ 张/.test(g1.stat), JSON.stringify(g1).slice(0, 200));
 await p.screenshot({ path: OUT + '/patch-gallery.png' });
-await p.fill('#sg-q', '贾'); await p.waitForTimeout(200);
+await p.fill('#sg-q', '谢菲'); await p.waitForTimeout(200);
 ok('搜索', (await p.$$('.sg-char')).length === 1);
 await p.click('.sg-char'); await p.waitForTimeout(500);
 const g2 = await E(() => ({ title: document.getElementById('sg-title').textContent, n: document.querySelectorAll('.sg-pic').length,
   first: document.querySelector('.sg-pic span').textContent, lazy: document.querySelector('.sg-pic img').loading, stat: document.getElementById('sg-stat').textContent }));
-ok('点进贾维斯：72 张，按表情标着', g2.title === '贾维斯' && g2.n === 72 && /暧昧地打量/.test(g2.first) && g2.lazy === 'lazy', JSON.stringify(g2));
-await p.screenshot({ path: OUT + '/patch-gallery-jervis.png' });
+ok('点进谢菲尔德：按表情标着', g2.title === '谢菲尔德' && g2.n >= 1 && /微笑/.test(g2.first) && g2.lazy === 'lazy', JSON.stringify(g2));
+await p.screenshot({ path: OUT + '/patch-gallery-char.png' });
 await p.click('.sg-pic[data-sgi="1"]'); await p.waitForTimeout(400);
-ok('点图看大图', await E(() => !document.getElementById('sg-view').hidden && /被欺负委屈/.test(document.getElementById('sg-cap').textContent)));
+ok('点图看大图', await E(() => !document.getElementById('sg-view').hidden && /微笑 2\/2/.test(document.getElementById('sg-cap').textContent)));
 await p.keyboard.press('ArrowRight'); await p.waitForTimeout(200);
-ok('→ 下一张', /被欺负委屈 2\/2/.test(await p.textContent('#sg-cap')), await p.textContent('#sg-cap'));
+ok('→ 下一张', /害羞/.test(await p.textContent('#sg-cap')), await p.textContent('#sg-cap'));
 const logLen = await E(() => window.__gal.cursor != null ? window.__gal.cursor : -1);
 await p.keyboard.press('ArrowLeft'); await p.keyboard.press('ArrowLeft'); await p.waitForTimeout(200);
-ok('← 翻回去，舞台没跟着翻句', /暧昧地打量/.test(await p.textContent('#sg-cap')) && (await E(() => window.__gal.cursor != null ? window.__gal.cursor : -1)) === logLen);
+ok('← 翻回去，舞台没跟着翻句', /微笑 1\/2/.test(await p.textContent('#sg-cap')) && (await E(() => window.__gal.cursor != null ? window.__gal.cursor : -1)) === logLen);
 await p.screenshot({ path: OUT + '/patch-gallery-view.png' });
 await p.keyboard.press('Escape'); await p.waitForTimeout(150);
 ok('Esc 关大图', await E(() => document.getElementById('sg-view').hidden && !document.getElementById('sg-modal').hidden));
