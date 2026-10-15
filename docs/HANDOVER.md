@@ -1200,7 +1200,7 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - **立绘图库**（app.js「立绘图库」一节，`#sg-modal`）：`sgChars()` 只列 `RESOURCE.characters` 里有表情的；列表 → 角色（服装分页 `#sg-tabs`）→ 大图 `#sg-view`。
   图一律 `loading="lazy"` + `ImgNet.srcFor`。键盘在捕获阶段拦（← → Esc Backspace），`stopImmediatePropagation`，舞台不会跟着翻句。
   入口：工具栏 `#btn-gallery`（❖）、开场引导左栏 `#boot-gallery`（`sgBootBtn()` 在 `noteAssets()` 里刷新，没有立绘时藏起来）。
-- **图库加载（v5.28.3）**：`ImgNet.thumbOf(url, w)` 给 wsrv 小图（direct / custom 模式返回 null）。app.js `sgFetch()` 按「缩略图 → ImgNet.candidates」挨个试，fetch 读流算进度（拿不到 content-length 或跨域读不了退回 `<img>`，进度条走马灯），成功存 blob 地址进 `sgCache`；缩略图的成败不记进 ImgNet 的直连统计。`sgEnqueue/sgPump` 并发 `SG_PAR = 3`；`sgWatch()` 用 IntersectionObserver 滚到才排队；`sgReset()`（换页 / 关图库）`sgGen++`、abort 在途请求。列表封面 w=320，角色页 w=360，大图 w=0（原图），大图先垫 360 的缓存再换。
+- **图库加载（v5.28.3）**：`ImgNet.thumbOf(url, w)` 给 wsrv 小图（direct / custom 模式返回 null）。app.js `sgFetch()` 按「缩略图 → ImgNet.candidates」挨个试，fetch 读流算进度（拿不到 content-length 或跨域读不了退回 `<img>`，进度条走马灯），成功存 blob 地址进 `sgCache`；缩略图的成败不记进 ImgNet 的直连统计。`sgEnqueue/sgPump` 并发 `SG_PAR = 3`；`sgWatch()` 用 IntersectionObserver 滚到才排队；`sgReset()`（换页 / 关图库）`sgGen++`、abort 在途请求。列表封面 w=400，角色页 w=480（q82）；大图 `SG_BIG = 1600`（q90，&we 不放大 = 原分辨率 webp，几百 KB；中转不通再拉 1MB 的原 PNG），先垫 480 的缓存再换（v5.28.5：以前大图直接拉原 PNG，直连被墙要等 45 秒，一直垫着模糊的小图）。每个地址最多等 25 秒。
 - 测试：`tools/e2e-patch.mjs`（25，合成的「juus」卡 + 拦截猫箱地址给占位图），`tools/unit/test-cardpatch.mjs`（22，含开场里的表情都在新立绘里），冒烟 [7k]。
 
 ## 七·二十一、版本更新提示（v5.28.4）

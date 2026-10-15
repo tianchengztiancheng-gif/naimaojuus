@@ -1038,7 +1038,7 @@ html:not(.m-mobile) .m-only{display:none}
 .sg-vbar{position:absolute;left:50%;bottom:64px;width:min(320px,60%);height:4px;margin-left:min(-160px,-30%);border-radius:2px;background:rgba(255,255,255,.15);overflow:hidden}
 .sg-vbar[hidden]{display:none}
 .sg-view figure{position:relative}
-#sg-img.sg-blur{filter:blur(2px) brightness(.85)}
+#sg-img.sg-blur{filter:brightness(.8)}
 .sg-pic span{padding:5px 8px 7px;font-size:12px;text-align:center;color:#cfe3ec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sg-pic span em{font-style:normal;color:var(--sub);margin-left:4px}
 /* 大图 */

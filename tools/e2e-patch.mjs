@@ -115,7 +115,7 @@ console.log('\n[C 立绘图库]');
 imgReq.length = 0;
 await p.click('#btn-gallery'); await p.waitForTimeout(1500);
 const cov = await E(() => ({ boxes: document.querySelectorAll('.sg-char .ph[data-src]').length, ok: document.querySelectorAll('.sg-char .ph.sg-ok img').length }));
-ok('列表页：每人一张封面，走缩略图（wsrv 小图），不拉原图', cov.ok >= 1 && imgReq.length >= 1 && imgReq.every(u => /wsrv\.nl.*&w=320/.test(u)), JSON.stringify(cov) + ' ' + imgReq.slice(0, 2).join(' '));
+ok('列表页：每人一张封面，走缩略图（wsrv 小图），不拉原图', cov.ok >= 1 && imgReq.length >= 1 && imgReq.every(u => /wsrv\.nl.*&w=400/.test(u)), JSON.stringify(cov) + ' ' + imgReq.slice(0, 2).join(' '));
 const g1 = await E(() => ({ open: !document.getElementById('sg-modal').hidden, names: [...document.querySelectorAll('.sg-char b')].map(x => x.textContent),
   stat: document.getElementById('sg-stat').textContent }));
 /* 本地装了素材包（resource/juus）时角色会多，看包含关系 */
@@ -148,11 +148,11 @@ await p.fill('#sg-q', '贾维斯'); await p.waitForTimeout(300);
 imgReq.length = 0;
 await p.click('.sg-char'); await p.waitForTimeout(2500);
 const g3 = await E(() => ({ n: document.querySelectorAll('.sg-pic').length, ok: document.querySelectorAll('.sg-pic .ph.sg-ok').length }));
-ok('点进贾维斯才拉她的差分：缩略图，排队拉', imgReq.length >= 3 && imgReq.length <= g3.n && imgReq.every(u => /wsrv\.nl.*&w=360/.test(u)) && g3.ok >= 3,
+ok('点进贾维斯才拉她的差分：缩略图，排队拉', imgReq.length >= 3 && imgReq.length <= g3.n && imgReq.every(u => /wsrv\.nl.*&w=480/.test(u)) && g3.ok >= 3,
    imgReq.length + '/' + g3.n + ' ' + imgReq[0]);
 imgReq.length = 0;
 await p.click('.sg-pic[data-sgi="0"]'); await p.waitForTimeout(1200);
-ok('大图拉的是原图（不是缩略图），拉完进度条收起', imgReq.some(u => /files\.catbox\.moe\/\w+\.png$/.test(u) || /wsrv\.nl.*&w=2048/.test(u)) &&
+ok('大图先拉原分辨率的 webp（w=1600、q90，不是缩略图），拉完进度条收起', imgReq.some(u => /wsrv\.nl.*&w=1600.*&q=90/.test(u)) &&
    await E(() => document.getElementById('sg-vbar').hidden && /^blob:/.test(document.getElementById('sg-img').src)), imgReq.join(' '));
 await p.keyboard.press('Escape'); await p.waitForTimeout(150);
 await p.click('#sg-back'); await p.waitForTimeout(200);

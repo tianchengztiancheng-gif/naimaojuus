@@ -128,10 +128,12 @@
    * 小图（图库的封面和缩略图用，v5.28.1）：走 wsrv.nl 缩成长边 w 的 webp，一张 1MB 的立绘 → 二三十 KB。
    * 「只直连」和自定义中转模式下不缩（玩家不想走 wsrv / 自定义中转不一定认尺寸参数），返回 null。
    */
-  function thumbOf(u, w) {
+  function thumbOf(u, w, q) {
     if (!isRemote(u) || isOwnRelay(u) || cfg.mode === 'direct' || cfg.mode === 'custom') return null;
-    w = Math.max(64, Math.min(1024, w | 0 || 320));
-    return RELAY + encodeURIComponent(u) + '&w=' + w + '&h=' + Math.round(w * 2) + '&fit=inside&we&output=webp&q=80';
+    w = Math.max(64, Math.min(4096, w | 0 || 320));
+    q = Math.max(40, Math.min(100, q | 0 || 80));
+    /* &we = 不放大：图本身比 w 小就按原尺寸出（立绘 832 宽，要 1600 拿到的就是原分辨率的 webp）；q 默认 80，图库大图用 90 */
+    return RELAY + encodeURIComponent(u) + '&w=' + w + '&h=' + Math.round(w * 2) + '&fit=inside&we&output=webp&q=' + q;
   }
 
   function srcFor(u) {

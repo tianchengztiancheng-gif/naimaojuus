@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!-- 版本号：和 version.json、package.json 三处要一致（冒烟测试会查）。线上 version.json 比这个新 → 页面提示「有新版本」，点一下更新（app.js「版本更新」一节） -->
-<meta name="gal-version" content="5.28.4">
+<meta name="gal-version" content="5.28.5">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1a26">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,14 +34,14 @@
 })();
 </script>
 <!-- ?v= 是防缓存：GitHub Pages 会缓存 10 分钟，更新时新旧文件混用会直接报错。每次发版改这个号 -->
-<link rel="stylesheet" href="app/style.css?v=5.28.4">
+<link rel="stylesheet" href="app/style.css?v=5.28.5">
 <!-- 顺序有意义：inner 打底 → 卡自带的皮（可选，会盖住 inner）→ phone.css 竖屏重排永远最后 -->
-<link rel="stylesheet" href="app/phone-inner.css?v=5.28.4">
+<link rel="stylesheet" href="app/phone-inner.css?v=5.28.5">
 <link rel="stylesheet" href="resource/juus/phone.css">
-<link rel="stylesheet" href="app/phone.css?v=5.28.4">
-<link rel="stylesheet" href="app/editor-theme.css?v=5.28.4">
+<link rel="stylesheet" href="app/phone.css?v=5.28.5">
+<link rel="stylesheet" href="app/editor-theme.css?v=5.28.5">
 <!-- 手机版式永远最后：只在 html.m-mobile 下生效，电脑模式一条都不碰 -->
-<link rel="stylesheet" href="app/mobile.css?v=5.28.4">
+<link rel="stylesheet" href="app/mobile.css?v=5.28.5">
 </head>
 <body>
 
@@ -336,7 +336,7 @@
       </nav>
 
       <div class="boot-foot">
-        <span>gal 引擎 · v5.28.4 <button type="button" class="linkbtn ver-check" id="boot-vercheck" title="看看有没有新版本">检查更新</button></span>
+        <span>gal 引擎 · v5.28.5 <button type="button" class="linkbtn ver-check" id="boot-vercheck" title="看看有没有新版本">检查更新</button></span>
         <span class="dim">所有文件只存在你自己的浏览器里</span>
       </div>
     </div>
@@ -526,32 +526,32 @@
 <script src="resource/juus/phone.js"></script>
 <script src="resource/aliases.js"></script>
 <!-- 必须是第一个脚本：它要能接住后面任何一个脚本的语法错误和初始化异常 -->
-<script src="core/crash.js?v=5.28.4"></script>
-<script src="core/cardres.js?v=5.28.4"></script>
+<script src="core/crash.js?v=5.28.5"></script>
+<script src="core/cardres.js?v=5.28.5"></script>
 <!-- 仓库里的卡修订包：机制 + juus 卡的数据（换立绘 / 删挂链 / 补世界书 / 加开场，见 core/cardpatch.js） -->
-<script src="core/cardpatch.js?v=5.28.4"></script>
-<script src="resource/juus-patch.js?v=5.28.4"></script>
-<script src="core/tokens.js?v=5.28.4"></script>
-<script src="core/vector.js?v=5.28.4"></script>
-<script src="core/imagegen.js?v=5.28.4"></script>
-<script src="core/snapshot.js?v=5.28.4"></script>
-<script src="core/gallery.js?v=5.28.4"></script>
-<script src="core/cg.js?v=5.28.4"></script>
-<script src="core/resolver.js?v=5.28.4"></script>
-<script src="core/worldbook.js?v=5.28.4"></script>
-<script src="core/regex.js?v=5.28.4"></script>
-<script src="core/prompt.js?v=5.28.4"></script>
-<script src="core/script.js?v=5.28.4"></script>
-<script src="core/phone.js?v=5.28.4"></script>
-<script src="core/memory.js?v=5.28.4"></script>
-<script src="core/engine.js?v=5.28.4"></script>
-<script src="core/api.js?v=5.28.4"></script>
-<script src="core/savetree.js?v=5.28.4"></script>
-<script src="core/imgnet.js?v=5.28.4"></script>
-<script src="core/opening.js?v=5.28.4"></script>
-<script src="core/storage.js?v=5.28.4"></script>
-<script src="core/editors.js?v=5.28.4"></script>
-<script src="core/customsprites.js?v=5.28.4"></script>
-<script src="app/app.js?v=5.28.4"></script>
+<script src="core/cardpatch.js?v=5.28.5"></script>
+<script src="resource/juus-patch.js?v=5.28.5"></script>
+<script src="core/tokens.js?v=5.28.5"></script>
+<script src="core/vector.js?v=5.28.5"></script>
+<script src="core/imagegen.js?v=5.28.5"></script>
+<script src="core/snapshot.js?v=5.28.5"></script>
+<script src="core/gallery.js?v=5.28.5"></script>
+<script src="core/cg.js?v=5.28.5"></script>
+<script src="core/resolver.js?v=5.28.5"></script>
+<script src="core/worldbook.js?v=5.28.5"></script>
+<script src="core/regex.js?v=5.28.5"></script>
+<script src="core/prompt.js?v=5.28.5"></script>
+<script src="core/script.js?v=5.28.5"></script>
+<script src="core/phone.js?v=5.28.5"></script>
+<script src="core/memory.js?v=5.28.5"></script>
+<script src="core/engine.js?v=5.28.5"></script>
+<script src="core/api.js?v=5.28.5"></script>
+<script src="core/savetree.js?v=5.28.5"></script>
+<script src="core/imgnet.js?v=5.28.5"></script>
+<script src="core/opening.js?v=5.28.5"></script>
+<script src="core/storage.js?v=5.28.5"></script>
+<script src="core/editors.js?v=5.28.5"></script>
+<script src="core/customsprites.js?v=5.28.5"></script>
+<script src="app/app.js?v=5.28.5"></script>
 </body>
 </html>

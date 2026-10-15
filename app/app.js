@@ -5518,8 +5518,11 @@
        · 拉过的存成 blob 地址，同一次打开里来回切不重新下
        · 大图看的是原图，也有进度条，先垫着缩略图 */
   var SG_PAR = 3, sgQ = [], sgBusy = 0, sgGen = 0, sgCache = {}, sgObs = null, sgAborts = [];
+  /* w：缩略图长边；SG_BIG = 大图（经中转的原分辨率 webp，比 1MB 的原 PNG 小得多，先试它，不通再拉原图） */
+  var SG_BIG = 1600;
+  function sgThumb(url, w) { return w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w, w >= SG_BIG ? 90 : 82) : null; }
   function sgCands(url, w) {
-    var out = [], t = w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w) : null;
+    var out = [], t = sgThumb(url, w);
     if (t) out.push(t);
     (ImgNet.candidates ? ImgNet.candidates(url) : [ImgNet.srcFor(url)]).forEach(function (c) { if (out.indexOf(c) < 0) out.push(c); });
     return out;
@@ -5533,7 +5536,7 @@
       return new Promise(function (res) {
         onProg(-1);
         var im = new Image(), done = false;
-        var t = setTimeout(function () { if (!done) { done = true; im.src = ''; res(null); } }, 45000);
+        var t = setTimeout(function () { if (!done) { done = true; im.src = ''; res(null); } }, 25000);
         im.onload = function () { if (!done) { done = true; clearTimeout(t); res(src); } };
         im.onerror = function () { if (!done) { done = true; clearTimeout(t); res(null); } };
         im.src = src;
@@ -5543,7 +5546,8 @@
       if (!window.fetch || !window.ReadableStream) return viaImg(src);
       var ac = window.AbortController ? new AbortController() : null;
       if (ac) sgAborts.push(ac);
-      var timer = setTimeout(function () { if (ac) ac.abort(); }, 45000);
+      /* 一个地址最多等 25 秒（直连被墙时会一直挂着），等不到换下一个 */
+      var timer = setTimeout(function () { if (ac) ac.abort(); }, 25000);
       return fetch(src, ac ? { signal: ac.signal } : {}).then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         var total = +r.headers.get('content-length') || 0;
@@ -5571,7 +5575,7 @@
         return null;
       });
     }
-    var thumb = w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w) : null, k = 0;
+    var thumb = sgThumb(url, w), k = 0;
     function next() {
       if (gen !== sgGen) return Promise.reject(new Error('stale'));
       if (k >= cands.length) return Promise.resolve(null);
@@ -5666,7 +5670,7 @@
       /* 列表页每人只有一张固定封面（微笑 / 平静 / 开心优先），而且是小图；点进去才拉这个人的全部差分 */
       body.innerHTML = list.length ? '<div class="sg-grid">' + list.map(function (c) {
         return '<button type="button" class="sg-char" data-sgwho="' + esc(c.name) + '">' +
-          (c.thumb ? sgBox(c.thumb, 320) : '<div class="ph"></div>') +
+          (c.thumb ? sgBox(c.thumb, 400) : '<div class="ph"></div>') +
           '<b>' + esc(c.name) + '</b><i>' + (c.outfits > 1 ? c.outfits + ' 套服装 · ' : '') + c.exprs + ' 种表情 · ' + c.pics + ' 张</i></button>';
       }).join('') + '</div>' : '<div class="sg-empty">没有名字里带「' + esc(q) + '」的角色。</div>';
       sgWatch(body);
@@ -5691,7 +5695,7 @@
     });
     $('sg-stat').textContent = SG.outfit + ' · ' + Object.keys(ex).length + ' 种表情 · ' + SG.list.length + ' 张';
     body.innerHTML = '<div class="sg-pics">' + SG.list.map(function (p, i) {
-      return '<button type="button" class="sg-pic" data-sgi="' + i + '">' + sgBox(p.url, 360) +
+      return '<button type="button" class="sg-pic" data-sgi="' + i + '">' + sgBox(p.url, 480) +
         '<span>' + esc(p.expr) + (p.of > 1 ? '<em>' + p.n + '/' + p.of + '</em>' : '') + '</span></button>';
     }).join('') + '</div>';
     body.scrollTop = 0;
@@ -5704,13 +5708,13 @@
     SG.idx = (i + SG.list.length) % SG.list.length;
     var p = SG.list[SG.idx], my = ++sgViewGen;
     var img = $('sg-img'), bar = $('sg-vbar');
-    img.src = sgCache[p.url + '|360'] || '';
-    img.classList.add('sg-blur');
+    img.src = sgCache[p.url + '|480'] || '';
+    img.classList.toggle('sg-blur', !sgCache[p.url + '|' + SG_BIG]);
     $('sg-cap').innerHTML = esc(SG.who) + ' · ' + esc(p.expr) + (p.of > 1 ? ' ' + p.n + '/' + p.of : '') +
       '<small>' + (SG.idx + 1) + ' / ' + SG.list.length + '</small>';
     $('sg-view').hidden = false;
     if (bar) { bar.hidden = false; bar.className = 'sg-vbar'; bar.firstChild.style.width = '0%'; }
-    sgFetch(p.url, 0, function (q) {
+    sgFetch(p.url, SG_BIG, function (q) {
       if (my !== sgViewGen || !bar) return;
       if (q < 0) bar.classList.add('sg-indet');
       else { bar.classList.remove('sg-indet'); bar.firstChild.style.width = Math.round(q * 100) + '%'; }
