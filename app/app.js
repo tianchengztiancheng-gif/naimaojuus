@@ -2064,7 +2064,7 @@
         return '<button data-sec="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + '>' +
           '<b>' + x.t + '</b><span>' + x.d + '</span></button>';
       }).join('') +
-      '<div class="kt-ver">gal 引擎 · v5.28</div></nav>' +
+      '<div class="kt-ver">gal 引擎 · v5.28.1</div></nav>' +
       '<section class="kt-main">' +
       '<header class="kt-head"><h2 id="kt-title"></h2><p id="kt-sub"></p>' +
       '<div class="kt-acts" id="kt-acts"></div></header>' +
@@ -4605,15 +4605,39 @@
     /* 自定义开场的舰娘和场景都从卡里来：卡一载入就重画 */
     if (typeof OPC !== 'undefined' && OPC && OPC.mode === 'custom') renderOpc();
   }
+  /**
+   * 开场白在列表里的名字：「在场的人 · 地点」（v5.28.1，玩家要求和修订包那个开局一个样，好感度不写）。
+   * 从开场原文里解析：说话的角色按出场顺序（旁白 / 玩家自己不算），地点取第一个背景。
+   * 解析不出人的（比如卡作者写的说明）退回抬头里的那串日期地点。
+   */
+  function openingLabel(t, i, fallback) {
+    var who = [], loc = '';
+    try {
+      var me = String((eng.cfg && eng.cfg.userName) || '').trim();
+      ScriptParser.parse(t).events.forEach(function (ev) {
+        if (ev.type === 'bg' && !loc) loc = ev.loc || '';
+        else if (ev.type === 'say' && !ev.narration) {
+          String(ev.who || '').split(/[&＆、,，]/).forEach(function (n) {
+            n = n.trim();
+            if (n && n !== '旁白' && n !== '指挥官' && n !== me && who.indexOf(n) < 0) who.push(n);
+          });
+        }
+      });
+    } catch (e) {}
+    if (!who.length) {
+      var m = String(t).match(/『([^』]*)』/);
+      return (i + 1) + '. ' + (fallback || (m ? m[1].replace(/✨/g, '').trim().slice(0, 40) : '开场 ' + (i + 1)));
+    }
+    var names = who.length > 5 ? who.slice(0, 5).join('、') + ' 等 ' + who.length + ' 人' : who.join('、');
+    return (i + 1) + '. ' + names + (loc ? ' · ' + loc : '');
+  }
   function fillOpenings(card) {
     var d = card.data || card;
+    /* 卡自带的 + 仓库修订包加的（resource/*-patch.js，排在后面），编号连着往下 */
+    var more = (d.alternate_greetings || []).map(function (g) { return { t: g }; })
+      .concat(window.CardPatch ? CardPatch.openings(card) : []);
     var list = [].concat(d.first_mes ? [{ n: '默认开场', t: d.first_mes }] : [],
-      (d.alternate_greetings || []).map(function (g, i) {
-        var m = g.match(/『([^』]*)』/);
-        return { n: (i + 1) + '. ' + (m ? m[1].replace(/✨/g, '').trim().slice(0, 40) : '开场 ' + (i + 1)), t: g };
-      }),
-      /* 仓库修订包加的开场（resource/*-patch.js），排在卡自带的后面 */
-      window.CardPatch ? CardPatch.openings(card) : []);
+      more.map(function (o, i) { return Object.assign({}, o, { n: openingLabel(o.t, i, o.n) }); }));
     $('opening-sel').innerHTML = list.map(function (o, i) {
       return '<option value="' + i + '">' + esc(o.n) + '</option>';
     }).join('') || '<option value="">（无开场白）</option>';

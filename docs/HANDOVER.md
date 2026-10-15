@@ -1192,10 +1192,11 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
   结果存 `eng.patchStats`，`noteAssets()` 显示。`sprites` 是整个角色换成新对象（CustomSprites 的还原逻辑按对象认，不会搅乱）；
   世界书按卡格式写，`Worldbook.fromCard` 转，uid 前缀 `patch:<id>:`，和卡里 **comment 同名的条目被替换**；`openings(card)` 给 `fillOpenings()` 接在卡自带的后面。
 - **resource/juus-patch.js**（数据，进仓库 —— 立绘是项目自己跑的图，世界书是维护者给的，不是从卡里抽的）：
-  认卡 `/juus|奶猫崛起/i` 测 `data.name`。贾维斯设定条目（@深度 5，order 998）。**贾维斯 / 雅努斯的新立绘先撤了**（第一批图没抠背景，`sprites: {}`）——抠好后加回 `sprites`，同时加回两人的「X差分」世界书条目（列表要和立绘里的表情一致，卡里同名的雅努斯差分会被替换），开场里雅努斯的表情也可以换回新表情名；现在开场里雅努斯只用卡里原有的表情；
+  认卡 `/juus|奶猫崛起/i` 测 `data.name`。贾维斯 34 表情 / 73 张 + 设定条目（@深度 5，order 998）+ 差分条目；雅努斯整套换 33 / 68 + 差分条目（差分条目的表情列表和立绘一致，卡里同名的雅努斯差分被替换）。立绘都是透明背景（v5.28.1；第一批白底的撤过一次，单测里有「没混进白底旧链接」的检查）。
   删巴尔的摩 / 布莱默顿 / 武藏的表情差分并关掉它们的「X差分」条目；威尔士 / 威尔士亲王的表情差分有就删（手头这版卡里没有差分；默认立绘 5 张实测能打开、画的是她，保留）；飞龙 ↔ 飞龙·META、苍龙 ↔ 苍龙·META 对调原皮（`swapDefaults` 只换第 0 张，后面的换装皮肤不动；看过图：卡里「飞龙」第 0 张是黑灰机械风的 META，「飞龙·META」那张才是原版）；
-  开局「★ 医务室 · 贾维斯与雅努斯（好感 80）」（juus 格式 + JSONPatch，seedVarsFromOpening 先按登场的人建 人物，好感默认 80，变量块再写细节）。
+  开局（列表名「贾维斯、雅努斯 · 医院病房」；juus 格式 + JSONPatch，seedVarsFromOpening 先按登场的人建 人物，好感默认 80，变量块再写细节）。
   用户给的贾维斯设定最后断在「同阵营关键」半句，那半句删了。
+- **开场白列表名**（v5.28.1，app.js `openingLabel()`）：卡自带的和修订包加的统一成「N. 在场的人 · 地点」——ScriptParser 解析原文，说话的角色按出场顺序（旁白、指挥官、玩家名不算，超过 5 人写「等 N 人」），地点取第一个背景；没人说话的（卡作者的说明）退回抬头那串日期地点；first_mes 仍叫「默认开场」。修订包开场的 `n` 只在解析不出时兜底。
 - **立绘图库**（app.js「立绘图库」一节，`#sg-modal`）：`sgChars()` 只列 `RESOURCE.characters` 里有表情的；列表 → 角色（服装分页 `#sg-tabs`）→ 大图 `#sg-view`。
   图一律 `loading="lazy"` + `ImgNet.srcFor`。键盘在捕获阶段拦（← → Esc Backspace），`stopImmediatePropagation`，舞台不会跟着翻句。
   入口：工具栏 `#btn-gallery`（❖）、开场引导左栏 `#boot-gallery`（`sgBootBtn()` 在 `noteAssets()` 里刷新，没有立绘时藏起来）。

@@ -2,19 +2,302 @@
  * resource/juus-patch.js —— juus 卡的修订包（引擎载入 juus 卡时自动打上，卡本身不用改）
  *
  * 机制见 core/cardpatch.js。这里只有数据：
- *   - 贾维斯 / 雅努斯的新立绘：先撤了（那批图没抠背景），抠好图再加回 sprites，同时加回两人的「差分」世界书条目。
- *     现在贾维斯用卡里的 2 张默认立绘，雅努斯用卡里原来的那套差分
+ *   - 贾维斯：新跑的 34 种表情 / 73 张立绘（透明背景；卡里原来只有 2 张默认立绘，没有表情差分）
+ *   - 雅努斯：整套换成新跑的 33 种表情 / 68 张（透明背景；替换卡里原来那 13 种 / 18 张）
  *   - 巴尔的摩、布莱默顿、武藏：表情差分的猫箱链接挂了，删掉（之后用卡里的默认立绘）
  *   - 威尔士：卡里有表情差分的话一并删掉（随卡版本，有就删）。她的默认立绘查过还能打开、画的也是她，保留
  *   - 飞龙、苍龙：原皮和 META 贴反了（「飞龙」第 0 张是 META 的图），各自和 META 对调原皮，换装皮肤不动
- *   - 世界书：贾维斯的详细设定；删了差分的几位，卡里的「X差分」条目关掉
+ *   - 世界书：贾维斯的详细设定 + 贾维斯 / 雅努斯的「差分」条目（告诉模型有哪些表情可用，和立绘一致）；
+ *            删了差分的几位，卡里的「X差分」条目关掉
  *   - 开场：指挥官、贾维斯、雅努斯三人在场，两人好感度 80
  *
- * 世界书由项目维护者提供 —— 不是从卡里抽的，可以进仓库。
+ * 立绘是这个项目自己跑的图，世界书由项目维护者提供 —— 不是从卡里抽的，可以进仓库。
  * ============================================================ */
 (function () {
   'use strict';
   if (!window.CardPatch) return;
+
+  var SPRITES = {
+ "贾维斯": {
+  "暧昧地打量": [
+   "https://files.catbox.moe/u5177j.png"
+  ],
+  "被欺负委屈": [
+   "https://files.catbox.moe/4f31kk.png",
+   "https://files.catbox.moe/deuzzl.png"
+  ],
+  "比心": [
+   "https://files.catbox.moe/x4n2qr.png",
+   "https://files.catbox.moe/n1m2wc.png"
+  ],
+  "比耶": [
+   "https://files.catbox.moe/ypqyzg.png"
+  ],
+  "不满": [
+   "https://files.catbox.moe/1s4nsg.png",
+   "https://files.catbox.moe/h7yr0p.png"
+  ],
+  "沉醉": [
+   "https://files.catbox.moe/qptu2y.png",
+   "https://files.catbox.moe/nfpgfb.png"
+  ],
+  "吃醋": [
+   "https://files.catbox.moe/qexowg.png",
+   "https://files.catbox.moe/e9h4be.png",
+   "https://files.catbox.moe/gqeqw4.png"
+  ],
+  "得意雌小鬼": [
+   "https://files.catbox.moe/4m87rm.png",
+   "https://files.catbox.moe/5rfydm.png",
+   "https://files.catbox.moe/oafdyi.png"
+  ],
+  "飞吻": [
+   "https://files.catbox.moe/a7olhp.png",
+   "https://files.catbox.moe/nru4uq.png"
+  ],
+  "刚醒或困倦": [
+   "https://files.catbox.moe/15i17y.png",
+   "https://files.catbox.moe/htubff.png",
+   "https://files.catbox.moe/chkpuz.png"
+  ],
+  "害羞": [
+   "https://files.catbox.moe/cwte3s.png",
+   "https://files.catbox.moe/b14bpp.png",
+   "https://files.catbox.moe/87gfib.png"
+  ],
+  "害羞到爆炸": [
+   "https://files.catbox.moe/fybjh9.png",
+   "https://files.catbox.moe/h4hbtp.png"
+  ],
+  "假装生气": [
+   "https://files.catbox.moe/l61uz1.png"
+  ],
+  "惊讶": [
+   "https://files.catbox.moe/1cwam0.png"
+  ],
+  "警惕": [
+   "https://files.catbox.moe/6cjp2y.png",
+   "https://files.catbox.moe/sp4e9q.png"
+  ],
+  "开心": [
+   "https://files.catbox.moe/uknptv.png",
+   "https://files.catbox.moe/yivfxr.png",
+   "https://files.catbox.moe/om7jz8.png"
+  ],
+  "流泪": [
+   "https://files.catbox.moe/vt7eme.png",
+   "https://files.catbox.moe/pysjlu.png",
+   "https://files.catbox.moe/fr7unx.png"
+  ],
+  "卖萌": [
+   "https://files.catbox.moe/b5hxyt.png"
+  ],
+  "疲惫": [
+   "https://files.catbox.moe/zjygm4.png"
+  ],
+  "疲惫无语": [
+   "https://files.catbox.moe/sbqmeo.png"
+  ],
+  "祈祷": [
+   "https://files.catbox.moe/6d67b2.png",
+   "https://files.catbox.moe/753v2x.png"
+  ],
+  "俏皮": [
+   "https://files.catbox.moe/7r5pse.png",
+   "https://files.catbox.moe/zsctng.png",
+   "https://files.catbox.moe/sz3bxt.png"
+  ],
+  "生气": [
+   "https://files.catbox.moe/0wxwic.png",
+   "https://files.catbox.moe/jehpee.png",
+   "https://files.catbox.moe/24j2cc.png"
+  ],
+  "失落": [
+   "https://files.catbox.moe/mcixjj.png",
+   "https://files.catbox.moe/xfab6k.png"
+  ],
+  "思考": [
+   "https://files.catbox.moe/fxxpsr.png",
+   "https://files.catbox.moe/0oenol.png"
+  ],
+  "微笑": [
+   "https://files.catbox.moe/6npde9.png",
+   "https://files.catbox.moe/ol8mfz.png",
+   "https://files.catbox.moe/gha5rb.png",
+   "https://files.catbox.moe/46p7ml.png"
+  ],
+  "做鬼脸": [
+   "https://files.catbox.moe/ptfv1l.png",
+   "https://files.catbox.moe/ccjfy6.png"
+  ],
+  "无语": [
+   "https://files.catbox.moe/dxs9aw.png",
+   "https://files.catbox.moe/6agp7a.png",
+   "https://files.catbox.moe/vjcko2.png"
+  ],
+  "嫌弃或厌恶": [
+   "https://files.catbox.moe/v0ewfq.png",
+   "https://files.catbox.moe/od8cix.png",
+   "https://files.catbox.moe/q7ptj9.png"
+  ],
+  "星星眼": [
+   "https://files.catbox.moe/jktbes.png",
+   "https://files.catbox.moe/q0dyrg.png",
+   "https://files.catbox.moe/rlwhj4.png"
+  ],
+  "疑惑": [
+   "https://files.catbox.moe/o3emvw.png",
+   "https://files.catbox.moe/70yvql.png"
+  ],
+  "真的很生气": [
+   "https://files.catbox.moe/hczxkk.png",
+   "https://files.catbox.moe/xw0y11.png"
+  ],
+  "震惊": [
+   "https://files.catbox.moe/tc6x8n.png"
+  ],
+  "自信": [
+   "https://files.catbox.moe/jl4eq0.png",
+   "https://files.catbox.moe/1z1e5w.png"
+  ]
+ },
+ "雅努斯": {
+  "暧昧地打量": [
+   "https://files.catbox.moe/1vq9qb.png",
+   "https://files.catbox.moe/tnu05n.png",
+   "https://files.catbox.moe/k9vyn8.png"
+  ],
+  "沉醉": [
+   "https://files.catbox.moe/wxokub.png",
+   "https://files.catbox.moe/0gdutm.png"
+  ],
+  "比心": [
+   "https://files.catbox.moe/h0261o.png",
+   "https://files.catbox.moe/85p8c4.png",
+   "https://files.catbox.moe/j1d0v5.png"
+  ],
+  "比耶": [
+   "https://files.catbox.moe/bd6puu.png"
+  ],
+  "不满": [
+   "https://files.catbox.moe/yhe2k6.png",
+   "https://files.catbox.moe/8lxcds.png"
+  ],
+  "吃醋": [
+   "https://files.catbox.moe/2zo4ys.png",
+   "https://files.catbox.moe/7yo6uo.png"
+  ],
+  "得意": [
+   "https://files.catbox.moe/9gya8p.png"
+  ],
+  "飞吻": [
+   "https://files.catbox.moe/oh6h9o.png",
+   "https://files.catbox.moe/bkmsnz.png"
+  ],
+  "刚醒或准备睡": [
+   "https://files.catbox.moe/yt47hh.png",
+   "https://files.catbox.moe/pdn1rl.png"
+  ],
+  "害羞": [
+   "https://files.catbox.moe/98dzar.png",
+   "https://files.catbox.moe/f9v936.png"
+  ],
+  "红温": [
+   "https://files.catbox.moe/ebp0yu.png",
+   "https://files.catbox.moe/gy1jtt.png",
+   "https://files.catbox.moe/5op5bf.png",
+   "https://files.catbox.moe/xg1cd6.png"
+  ],
+  "假装很生气": [
+   "https://files.catbox.moe/7qfvmu.png",
+   "https://files.catbox.moe/8td8mf.png"
+  ],
+  "惊讶": [
+   "https://files.catbox.moe/lnqmuz.png",
+   "https://files.catbox.moe/dn4fgm.png",
+   "https://files.catbox.moe/wqs4c8.png"
+  ],
+  "警觉": [
+   "https://files.catbox.moe/t9u17y.png",
+   "https://files.catbox.moe/tu46pk.png"
+  ],
+  "窘迫": [
+   "https://files.catbox.moe/e7nz92.png",
+   "https://files.catbox.moe/g5ca0k.png"
+  ],
+  "开心": [
+   "https://files.catbox.moe/bdc8ho.png",
+   "https://files.catbox.moe/yf2u2r.png",
+   "https://files.catbox.moe/w19fbi.png"
+  ],
+  "流泪": [
+   "https://files.catbox.moe/kne2fl.png",
+   "https://files.catbox.moe/iz8dvk.png"
+  ],
+  "猫耳卖萌": [
+   "https://files.catbox.moe/mruud5.png",
+   "https://files.catbox.moe/0orzcb.png"
+  ],
+  "疲惫": [
+   "https://files.catbox.moe/omx85q.png",
+   "https://files.catbox.moe/7q8b34.png"
+  ],
+  "祈祷": [
+   "https://files.catbox.moe/6crtha.png",
+   "https://files.catbox.moe/u03r39.png"
+  ],
+  "俏皮": [
+   "https://files.catbox.moe/2oz1is.png"
+  ],
+  "撒娇": [
+   "https://files.catbox.moe/25qo9s.png",
+   "https://files.catbox.moe/k67nyb.png"
+  ],
+  "失落": [
+   "https://files.catbox.moe/dh4q7m.png",
+   "https://files.catbox.moe/yowbns.png"
+  ],
+  "思考": [
+   "https://files.catbox.moe/pj993i.png",
+   "https://files.catbox.moe/9gjbdj.png"
+  ],
+  "吐舌卖萌": [
+   "https://files.catbox.moe/n4to4u.png",
+   "https://files.catbox.moe/zghe62.png"
+  ],
+  "委屈": [
+   "https://files.catbox.moe/dsb811.png",
+   "https://files.catbox.moe/vocql5.png"
+  ],
+  "无语": [
+   "https://files.catbox.moe/0l7c2r.png",
+   "https://files.catbox.moe/cy0lcn.png"
+  ],
+  "嫌弃": [
+   "https://files.catbox.moe/9mdb64.png",
+   "https://files.catbox.moe/6a2ero.png",
+   "https://files.catbox.moe/7a4dy6.png"
+  ],
+  "星星眼": [
+   "https://files.catbox.moe/i2rruz.png"
+  ],
+  "羞涩": [
+   "https://files.catbox.moe/84zkkl.png",
+   "https://files.catbox.moe/j0u765.png"
+  ],
+  "疑惑": [
+   "https://files.catbox.moe/y8e4sp.png",
+   "https://files.catbox.moe/dtfbar.png"
+  ],
+  "真的很生气": [
+   "https://files.catbox.moe/030pv6.png",
+   "https://files.catbox.moe/0xg3k3.png"
+  ],
+  "自信": [
+   "https://files.catbox.moe/hgoie3.png"
+  ]
+ }
+};
 
   var WORLDBOOK = [
  {
@@ -41,10 +324,56 @@
    "useProbability": true,
    "selectiveLogic": 0
   }
+ },
+ {
+  "id": "jervis-diff",
+  "comment": "贾维斯差分",
+  "keys": [
+   "贾维斯"
+  ],
+  "secondary_keys": [],
+  "content": "贾维斯:\n  常服:\n    - 暧昧地打量\n    - 被欺负委屈\n    - 比心\n    - 比耶\n    - 不满\n    - 沉醉\n    - 吃醋\n    - 得意雌小鬼\n    - 飞吻\n    - 刚醒或困倦\n    - 害羞\n    - 害羞到爆炸\n    - 假装生气\n    - 惊讶\n    - 警惕\n    - 开心\n    - 流泪\n    - 卖萌\n    - 疲惫\n    - 疲惫无语\n    - 祈祷\n    - 俏皮\n    - 生气\n    - 失落\n    - 思考\n    - 微笑\n    - 做鬼脸\n    - 无语\n    - 嫌弃或厌恶\n    - 星星眼\n    - 疑惑\n    - 真的很生气\n    - 震惊\n    - 自信",
+  "constant": false,
+  "selective": true,
+  "insertion_order": 102,
+  "enabled": true,
+  "position": "after_char",
+  "extensions": {
+   "position": 4,
+   "depth": 1,
+   "exclude_recursion": true,
+   "prevent_recursion": true,
+   "probability": 100,
+   "useProbability": true,
+   "selectiveLogic": 0
+  }
+ },
+ {
+  "id": "janus-diff",
+  "comment": "雅努斯差分",
+  "keys": [
+   "雅努斯"
+  ],
+  "secondary_keys": [],
+  "content": "雅努斯:\n  常服:\n    - 暧昧地打量\n    - 沉醉\n    - 比心\n    - 比耶\n    - 不满\n    - 吃醋\n    - 得意\n    - 飞吻\n    - 刚醒或准备睡\n    - 害羞\n    - 红温\n    - 假装很生气\n    - 惊讶\n    - 警觉\n    - 窘迫\n    - 开心\n    - 流泪\n    - 猫耳卖萌\n    - 疲惫\n    - 祈祷\n    - 俏皮\n    - 撒娇\n    - 失落\n    - 思考\n    - 吐舌卖萌\n    - 委屈\n    - 无语\n    - 嫌弃\n    - 星星眼\n    - 羞涩\n    - 疑惑\n    - 真的很生气\n    - 自信",
+  "constant": false,
+  "selective": true,
+  "insertion_order": 102,
+  "enabled": true,
+  "position": "after_char",
+  "extensions": {
+   "position": 4,
+   "depth": 1,
+   "exclude_recursion": true,
+   "prevent_recursion": true,
+   "probability": 100,
+   "useProbability": true,
+   "selectiveLogic": 0
+  }
  }
 ];
 
-  var OPENING = "<Gal>\n『✨ 2081/06/20 · 星期六 · 14:20 · 医院病房 · 天气:晴 ✨』|旁白|-|\n午后的医务室安静得能听见点滴瓶里气泡上浮的声音。窗外的晾衣绳上挂满了刚洗好的白被单，被海风吹得一鼓一鼓，把阳光切成一格一格落在消毒过的地板上。|旁白|-|\n指挥官推门进来的时候，左手食指上缠着一圈皱巴巴的纸巾，纸巾中间洇出一小点红。|旁白|-|\n「……停在那里。」|贾维斯|警惕|\n清脆的声音从药品柜后面传来。贾维斯探出半个身子，护士帽端端正正地压在深紫色的短发上，紫罗兰色的眼睛先落在那团纸巾上，再慢慢抬起来，盯住指挥官的脸。|贾维斯|警惕|\n「让我猜猜。签文件的时候被纸划了，然后觉得“这点小伤不用管”，随手抽了张纸巾按着，又批了两个小时的文件——对么？」|贾维斯|不满|\n「……只批了一个半小时。」|旁白|-|\n「那还真是了不起呢。」她把手里的登记簿往桌上一拍，戴着白手套的手指了指诊疗椅，「坐下。手伸出来。」|贾维斯|假装生气|\n指挥官乖乖坐下。贾维斯拉过小推车，镊子、碘伏、棉签和创可贴在托盘里排得一丝不苟。她低着头揭开那团纸巾，动作出乎意料地轻。|旁白|-|\n「伤口不深，但边缘已经有点发红了。再拖一天，你就要来找我换药换上一个礼拜。」|贾维斯|思考|\n「……会有点凉，忍着。」|贾维斯|微笑|\n棉签碰上来的一瞬间，指挥官下意识缩了一下手指。贾维斯没抬头，只是用另一只手稳稳托住了他的手腕，拇指隔着手套轻轻按在脉搏的位置。|旁白|-|\n「别动。……真是的，明明是个大人，怎么比驱逐舰的孩子们还让人操心。」|贾维斯|害羞|\n门外传来一阵细碎又急促的脚步声，紧接着是托盘边缘磕到门框的“叮”一声。|旁白|-|\n「贾、贾维斯姐姐！女仆体验日的点心烤好了，我、我想先拿来给你尝尝——」|雅努斯|开心|\n雅努斯侧着身子挤进门，女仆发箍歪了一点点，怀里的托盘上摆着一排形状不太规则的黄油曲奇，热气还没散尽。看见诊疗椅上的人，她整个人愣在原地。|雅努斯|惊讶|\n「指挥官……？您、您受伤了吗？！」|雅努斯|惊讶|\n「只是被纸划了一下。」|旁白|-|\n「只是被纸划了一下，然后放着不管两个小时。」贾维斯面无波澜地补充，手上已经撕开了创可贴的包装。|贾维斯|无语|\n雅努斯“啊”地小声叫了一下，把托盘往旁边的柜子上一放，快步走过来，蹲在诊疗椅旁边，仰着脸看那根被裹起来的手指，眼眶居然有点泛红。|雅努斯|伤心|\n「一定很痛吧……指挥官总是这样，什么事都自己扛着……」|雅努斯|伤心|\n「不至于、不至于。」|旁白|-|\n「雅努斯，别把他惯坏了。」贾维斯把创可贴压平，又用指腹沿着边缘仔细按了一圈，确认没有翘起来，「这种人就是要被说教才会长记性。」|贾维斯|嫌弃或厌恶|\n话是这么说，她却没有立刻松开指挥官的手。|旁白|-|\n雅努斯眨了眨眼，视线在姐姐的手和指挥官的手之间来回转了两圈，忽然捂着嘴笑起来。|雅努斯|开心|\n「姐姐的手……还握着呢。」|雅努斯|好奇|\n「……！我、我是在确认包扎有没有松！这是正规的护理流程！」|贾维斯|害羞到爆炸|\n贾维斯一下子把手抽了回去，耳尖迅速染上一层薄红，转身去收拾托盘，镊子和棉签被她摆得比刚才还要整齐。|贾维斯|害羞|\n雅努斯笑眯眯地站起来，端过那盘曲奇，挑了一块形状最圆的，双手捧到指挥官面前。|雅努斯|撒娇|\n「那、那这个是给指挥官的慰问品！是我第一次自己烤的……可能有一点点焦……」|雅努斯|害羞|\n「受伤的手不准拿东西。」贾维斯背对着两人，声音硬邦邦的，「……用另一只手。还有，吃完之前不准离开医务室，我要观察一下有没有感染的迹象。」|贾维斯|假装生气|\n「观察要多久？」|旁白|-|\n「……到我说可以为止。」她顿了顿，从药品柜里拿出一个干净的茶杯，放在指挥官手边，「顺便一提，医务室只提供病号茶。不介意的话，随你。」|贾维斯|自信|\n<env>午后 · 港区医务室，消毒水的气味里混进了刚出炉的黄油曲奇香，窗外晾着的白被单在海风里起伏。</env>\n<choice>[接过雅努斯的曲奇，当面夸她烤得好][故意问贾维斯：病号茶只有我有吗？][提议三个人一起去晾衣场帮忙收被单]</choice>\n</Gal>\n\n<UpdateVariable>\n<Analysis>\n- Time passed: none, opening scene at 14:20\n- Location is 医院病房 (港区医务室)\n- 贾维斯 and 雅努斯 present, both 好感度 80 as the opening setting\n</Analysis>\n<JSONPatch>\n[\n  {\"op\":\"replace\",\"path\":\"/时间/时段\",\"value\":\"午后\"},\n  {\"op\":\"replace\",\"path\":\"/地点\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/好感度\",\"value\":80},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/服装\",\"value\":\"常服\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/穿着细节\",\"value\":\"黑白护士女仆装，白色护士帽，白色长筒手套与白色连裤袜\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/当前状态\",\"value\":\"护理中\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/内心想法\",\"value\":\"真是的，被纸划了都不知道处理……不过握着他的手的时候，好像比平时安心一点。绝对不能让雅努斯看出来。\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/所在位置\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/在场\",\"value\":true},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/好感度\",\"value\":80},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/服装\",\"value\":\"常服\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/穿着细节\",\"value\":\"女仆体验日的见习女仆装，白色荷叶边发箍有点歪\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/当前状态\",\"value\":\"送点心\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/内心想法\",\"value\":\"指挥官受伤了好心疼……不过姐姐刚才的样子好可爱，要是指挥官喜欢我烤的曲奇就好了。\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/所在位置\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/在场\",\"value\":true}\n]\n</JSONPatch>\n</UpdateVariable>\n";
+  var OPENING = "<Gal>\n『✨ 2081/06/20 · 星期六 · 14:20 · 医院病房 · 天气:晴 ✨』|旁白|-|\n午后的医务室安静得能听见点滴瓶里气泡上浮的声音。窗外的晾衣绳上挂满了刚洗好的白被单，被海风吹得一鼓一鼓，把阳光切成一格一格落在消毒过的地板上。|旁白|-|\n指挥官推门进来的时候，左手食指上缠着一圈皱巴巴的纸巾，纸巾中间洇出一小点红。|旁白|-|\n「……停在那里。」|贾维斯|警惕|\n清脆的声音从药品柜后面传来。贾维斯探出半个身子，护士帽端端正正地压在深紫色的短发上，紫罗兰色的眼睛先落在那团纸巾上，再慢慢抬起来，盯住指挥官的脸。|贾维斯|警惕|\n「让我猜猜。签文件的时候被纸划了，然后觉得“这点小伤不用管”，随手抽了张纸巾按着，又批了两个小时的文件——对么？」|贾维斯|不满|\n「……只批了一个半小时。」|旁白|-|\n「那还真是了不起呢。」她把手里的登记簿往桌上一拍，戴着白手套的手指了指诊疗椅，「坐下。手伸出来。」|贾维斯|假装生气|\n指挥官乖乖坐下。贾维斯拉过小推车，镊子、碘伏、棉签和创可贴在托盘里排得一丝不苟。她低着头揭开那团纸巾，动作出乎意料地轻。|旁白|-|\n「伤口不深，但边缘已经有点发红了。再拖一天，你就要来找我换药换上一个礼拜。」|贾维斯|思考|\n「……会有点凉，忍着。」|贾维斯|微笑|\n棉签碰上来的一瞬间，指挥官下意识缩了一下手指。贾维斯没抬头，只是用另一只手稳稳托住了他的手腕，拇指隔着手套轻轻按在脉搏的位置。|旁白|-|\n「别动。……真是的，明明是个大人，怎么比驱逐舰的孩子们还让人操心。」|贾维斯|害羞|\n门外传来一阵细碎又急促的脚步声，紧接着是托盘边缘磕到门框的“叮”一声。|旁白|-|\n「贾、贾维斯姐姐！女仆体验日的点心烤好了，我、我想先拿来给你尝尝——」|雅努斯|开心|\n雅努斯侧着身子挤进门，女仆发箍歪了一点点，怀里的托盘上摆着一排形状不太规则的黄油曲奇，热气还没散尽。看见诊疗椅上的人，她整个人愣在原地。|雅努斯|惊讶|\n「指挥官……？您、您受伤了吗？！」|雅努斯|惊讶|\n「只是被纸划了一下。」|旁白|-|\n「只是被纸划了一下，然后放着不管两个小时。」贾维斯面无波澜地补充，手上已经撕开了创可贴的包装。|贾维斯|无语|\n雅努斯“啊”地小声叫了一下，把托盘往旁边的柜子上一放，快步走过来，蹲在诊疗椅旁边，仰着脸看那根被裹起来的手指，眼眶居然有点泛红。|雅努斯|委屈|\n「一定很痛吧……指挥官总是这样，什么事都自己扛着……」|雅努斯|流泪|\n「不至于、不至于。」|旁白|-|\n「雅努斯，别把他惯坏了。」贾维斯把创可贴压平，又用指腹沿着边缘仔细按了一圈，确认没有翘起来，「这种人就是要被说教才会长记性。」|贾维斯|嫌弃或厌恶|\n话是这么说，她却没有立刻松开指挥官的手。|旁白|-|\n雅努斯眨了眨眼，视线在姐姐的手和指挥官的手之间来回转了两圈，忽然捂着嘴笑起来。|雅努斯|俏皮|\n「姐姐的手……还握着呢。」|雅努斯|暧昧地打量|\n「……！我、我是在确认包扎有没有松！这是正规的护理流程！」|贾维斯|害羞到爆炸|\n贾维斯一下子把手抽了回去，耳尖迅速染上一层薄红，转身去收拾托盘，镊子和棉签被她摆得比刚才还要整齐。|贾维斯|害羞|\n雅努斯笑眯眯地站起来，端过那盘曲奇，挑了一块形状最圆的，双手捧到指挥官面前。|雅努斯|撒娇|\n「那、那这个是给指挥官的慰问品！是我第一次自己烤的……可能有一点点焦……」|雅努斯|羞涩|\n「受伤的手不准拿东西。」贾维斯背对着两人，声音硬邦邦的，「……用另一只手。还有，吃完之前不准离开医务室，我要观察一下有没有感染的迹象。」|贾维斯|假装生气|\n「观察要多久？」|旁白|-|\n「……到我说可以为止。」她顿了顿，从药品柜里拿出一个干净的茶杯，放在指挥官手边，「顺便一提，医务室只提供病号茶。不介意的话，随你。」|贾维斯|自信|\n<env>午后 · 港区医务室，消毒水的气味里混进了刚出炉的黄油曲奇香，窗外晾着的白被单在海风里起伏。</env>\n<choice>[接过雅努斯的曲奇，当面夸她烤得好][故意问贾维斯：病号茶只有我有吗？][提议三个人一起去晾衣场帮忙收被单]</choice>\n</Gal>\n\n<UpdateVariable>\n<Analysis>\n- Time passed: none, opening scene at 14:20\n- Location is 医院病房 (港区医务室)\n- 贾维斯 and 雅努斯 present, both 好感度 80 as the opening setting\n</Analysis>\n<JSONPatch>\n[\n  {\"op\":\"replace\",\"path\":\"/时间/时段\",\"value\":\"午后\"},\n  {\"op\":\"replace\",\"path\":\"/地点\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/好感度\",\"value\":80},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/服装\",\"value\":\"常服\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/穿着细节\",\"value\":\"黑白护士女仆装，白色护士帽，白色长筒手套与白色连裤袜\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/当前状态\",\"value\":\"护理中\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/内心想法\",\"value\":\"真是的，被纸划了都不知道处理……不过握着他的手的时候，好像比平时安心一点。绝对不能让雅努斯看出来。\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/所在位置\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/贾维斯/在场\",\"value\":true},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/好感度\",\"value\":80},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/服装\",\"value\":\"常服\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/穿着细节\",\"value\":\"女仆体验日的见习女仆装，白色荷叶边发箍有点歪\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/当前状态\",\"value\":\"送点心\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/内心想法\",\"value\":\"指挥官受伤了好心疼……不过姐姐刚才的样子好可爱，要是指挥官喜欢我烤的曲奇就好了。\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/所在位置\",\"value\":\"医院病房\"},\n  {\"op\":\"replace\",\"path\":\"/人物/雅努斯/在场\",\"value\":true}\n]\n</JSONPatch>\n</UpdateVariable>\n";
 
   window.CardPatch.register({
     id: 'juus',
@@ -53,12 +382,12 @@
       var d = (card && (card.data || card)) || {};
       return /juus|奶猫崛起/i.test(String(d.name || ''));
     },
-    sprites: {},          // 贾维斯 / 雅努斯的新立绘：抠好图再加，写法 { 角色: { 服装: { 表情: [url…] } } }
+    sprites: { '贾维斯': { '常服': SPRITES['贾维斯'] }, '雅努斯': { '常服': SPRITES['雅努斯'] } },
     dropSprites: ['巴尔的摩', '布莱默顿', '武藏', '威尔士', '威尔士亲王'],
     dropDefaults: [],
     swapDefaults: [['飞龙', '飞龙·META'], ['苍龙', '苍龙·META']],
     worldbook: WORLDBOOK,
     disableEntries: ['巴尔的摩差分', '布莱默顿差分', '武藏差分', '威尔士差分', '威尔士亲王差分'],
-    openings: [{ n: '★ 医务室 · 贾维斯与雅努斯（好感 80）', t: OPENING }]
+    openings: [{ n: '贾维斯、雅努斯 · 医务室', t: OPENING }]   // 列表里的名字由 app.js openingLabel() 从原文算（在场的人 · 地点）
   });
 })();

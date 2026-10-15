@@ -52,22 +52,30 @@ console.log('\n[2] juus 卡的修订数据');
   const p = CP._list().find(x => x.id === 'juus');
   ok('注册了', !!p);
   ok('认 juus / 奶猫崛起，不认别的', p.match({ data: { name: 'juus 之奶猫崛起' } }) && p.match({ data: { name: 'JUUS' } }) && !p.match({ data: { name: '天青' } }));
-  ok('贾维斯 / 雅努斯的新立绘先撤了（没抠图），不换立绘', J(p.sprites) === '{}');
+  const n = w => Object.values(p.sprites[w].常服).flat().length;
+  ok('贾维斯 34 种表情 / 73 张，雅努斯 33 种 / 68 张', Object.keys(p.sprites.贾维斯.常服).length === 34 && n('贾维斯') === 73 &&
+     Object.keys(p.sprites.雅努斯.常服).length === 33 && n('雅努斯') === 68, n('贾维斯') + ' ' + n('雅努斯'));
+  const all = [...Object.values(p.sprites.贾维斯.常服).flat(), ...Object.values(p.sprites.雅努斯.常服).flat()];
+  ok('地址都是猫箱 png，没有重复', all.every(u => /^https:\/\/files\.catbox\.moe\/\w+\.png$/.test(u)) && new Set(all).size === all.length);
+  /* 第一批没抠背景的图（白底），不许混进来 */
+  const OLDBAD = ['1h93dk', '1gg4aj', '1fvy8m', 'bq5o2g', 'scj1qt', 'mnm6mk'];
+  ok('没混进白底的旧链接', !all.some(u => OLDBAD.some(b => u.includes(b))));
   ok('删 / 对调的名单', J(p.dropSprites) === J(['巴尔的摩', '布莱默顿', '武藏', '威尔士', '威尔士亲王']) && J(p.dropDefaults) === J([]) &&
      J(p.swapDefaults) === J([['飞龙', '飞龙·META'], ['苍龙', '苍龙·META']]));
   const wb = p.worldbook;
-  ok('世界书：只有贾维斯设定（差分条目跟着立绘一起撤了）', J(wb.map(e => e.comment)) === J(['贾维斯']) &&
+  ok('世界书：贾维斯设定 / 贾维斯差分 / 雅努斯差分', J(wb.map(e => e.comment)) === J(['贾维斯', '贾维斯差分', '雅努斯差分']) &&
      /<character_information character="贾维斯">/.test(wb[0].content) && /<\/character_information>\s*$/.test(wb[0].content));
+  const lines = c => c.split('\n').filter(l => /^\s+- /.test(l)).map(l => l.replace(/^\s+- /, ''));
+  ok('差分条目里的表情 = 立绘里的表情', J(lines(wb[1].content)) === J(Object.keys(p.sprites.贾维斯.常服)) &&
+     J(lines(wb[2].content)) === J(Object.keys(p.sprites.雅努斯.常服)));
   const pool = Worldbook.fromCard({ data: { character_book: { entries: wb } } });
-  ok('世界书条目按卡格式读得出来：@深度、关键词', pool[0].position === 4 && pool[0].depth === 5 && pool[0].key.includes('贾维斯'));
+  ok('世界书条目按卡格式读得出来：@深度、关键词', pool[0].position === 4 && pool[0].depth === 5 && pool[0].key.includes('贾维斯') && pool[1].depth === 1);
   ok('关掉三位的差分条目', J(p.disableEntries) === J(['巴尔的摩差分', '布莱默顿差分', '武藏差分', '威尔士差分', '威尔士亲王差分']));
   const op = p.openings[0].t;
   const ev = ScriptParser.parse(op).events;
   const says = ev.filter(e => e.type === 'say' && !e.narration);
-  /* 卡里雅努斯原来那套差分；贾维斯卡里只有默认立绘，表情名不查 */
-  const OLD = ['不安', '好奇', '比心', '伤心', '思考', '内心惊讶', '害羞', '开心', '性邀请', '严肃', '惊讶', '撒娇', '发情'];
-  const bad = says.filter(e => e.who === '雅努斯' && !OLD.includes(e.expr));
-  ok('开场：贾维斯 / 雅努斯说话，雅努斯的表情都在卡里原来的差分里', says.length > 15 && says.some(e => e.who === '贾维斯') && says.some(e => e.who === '雅努斯') && bad.length === 0,
+  const bad = says.filter(e => !(p.sprites[e.who] && p.sprites[e.who].常服[e.expr]));
+  ok('开场：贾维斯 / 雅努斯说话，表情都在新立绘里', says.length > 15 && says.some(e => e.who === '贾维斯') && says.some(e => e.who === '雅努斯') && bad.length === 0,
      J(bad.map(e => e.who + '|' + e.expr)));
   ok('开场：地点医院病房，有选项和变量块（两人好感 80）', ev.some(e => e.type === 'bg' && e.loc === '医院病房') && /<choice>\[/.test(op) &&
      /"\/人物\/贾维斯\/好感度","value":80/.test(op) && /"\/人物\/雅努斯\/好感度","value":80/.test(op));
