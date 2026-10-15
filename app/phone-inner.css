@@ -295,3 +295,9 @@
 #jup-root .ditm .dl{color:var(--pi-dim)}
 #jup-root .ditm .dv{color:var(--pi-ink);line-height:1.75}
 #jup-root .dsempty{color:var(--pi-dim);font-size:12.5px}
+
+/* ---- 头像（app.js 的 av() 输出 .av）：以前只给 .avt 写了尺寸，.av 没有，真图会按原尺寸撑满 ---- */
+#jup-root .av{width:40px;height:40px;border-radius:50%;object-fit:cover;object-position:top center;flex:none;
+  display:block;background:#e6f1ff;border:1px solid rgba(180,210,240,.6)}
+#jup-root .m .av{width:34px;height:34px}
+#jup-root .ct .av{width:44px;height:44px}
