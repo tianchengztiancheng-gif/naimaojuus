@@ -5502,9 +5502,11 @@
       return { name: n, outfits: Object.keys(outs).length, exprs: exprs, pics: pics, thumb: face ? ex[face][0] : '' };
     });
   }
+  /* v5.28.6：图库问题还多，先下线 —— 三个入口全藏起来，代码留着。网址带 ?gallery=1 才打开（调试、测试用） */
+  var SG_ON = /[?&]gallery=1\b/.test(location.search);
   function sgBootBtn() {
     var b = $('boot-gallery'); if (!b) return;
-    var n = sgChars().length;
+    var n = SG_ON ? sgChars().length : 0;
     b.hidden = !n;
     if ($('boot-gallery-n')) $('boot-gallery-n').textContent = n + ' 位';
   }
@@ -5817,6 +5819,7 @@
   });
 
   $('btn-gallery').onclick = openGallery;
+  if (!SG_ON) ['btn-gallery', 'cg-sg', 'boot-gallery'].forEach(function (id) { var el = $(id); if (el) { el.hidden = true; el.style.display = 'none'; } });
   /* 相册里也有一个入口：手机竖屏工具栏放不下第 9 个键，❖ 在竖屏是藏起来的 */
   if ($('cg-sg')) $('cg-sg').onclick = function () { $('cg-panel').hidden = true; openGallery(); };
   if ($('boot-gallery')) $('boot-gallery').onclick = openGallery;

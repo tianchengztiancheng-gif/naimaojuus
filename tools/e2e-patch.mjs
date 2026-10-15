@@ -58,10 +58,14 @@ await ctx.route('**/*', r => {
 });
 const p = await ctx.newPage();
 const errs = []; p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-await p.goto('file://' + ROOT + '/index.html'); await p.waitForTimeout(900);
+/* 图库 v5.28.6 起默认下线，?gallery=1 才开；先确认默认是藏着的 */
+await p.goto('file://' + ROOT + '/index.html?title=0'); await p.waitForTimeout(700);
+const sgOff = await p.evaluate(() => ['btn-gallery', 'cg-sg', 'boot-gallery'].map(id => { const e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; }));
+await p.goto('file://' + ROOT + '/index.html?gallery=1'); await p.waitForTimeout(900);
 const E = (f, a) => p.evaluate(f, a);
 
 console.log('\n[A 修订包]');
+ok('图库默认下线：工具栏、相册、引导页三个入口都藏着', sgOff.every(Boolean), JSON.stringify(sgOff));
 await p.setInputFiles('#f-card', OUT + '/patch-other.json'); await p.waitForTimeout(500);
 const o = await E(() => ({ ids: window.__gal.eng.patchStats && window.__gal.eng.patchStats.ids, jervis: !!RESOURCE.characters['贾维斯'],
   ops: document.getElementById('opening-sel').options.length }));

@@ -1203,6 +1203,13 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - **图库加载（v5.28.3）**：`ImgNet.thumbOf(url, w)` 给 wsrv 小图（direct / custom 模式返回 null）。app.js `sgFetch()` 按「缩略图 → ImgNet.candidates」挨个试，fetch 读流算进度（拿不到 content-length 或跨域读不了退回 `<img>`，进度条走马灯），成功存 blob 地址进 `sgCache`；缩略图的成败不记进 ImgNet 的直连统计。`sgEnqueue/sgPump` 并发 `SG_PAR = 3`；`sgWatch()` 用 IntersectionObserver 滚到才排队；`sgReset()`（换页 / 关图库）`sgGen++`、abort 在途请求。列表封面 w=400，角色页 w=480（q82）；大图 `SG_BIG = 1600`（q90，&we 不放大 = 原分辨率 webp，几百 KB；中转不通再拉 1MB 的原 PNG），先垫 480 的缓存再换（v5.28.5：以前大图直接拉原 PNG，直连被墙要等 45 秒，一直垫着模糊的小图）。每个地址最多等 25 秒。
 - 测试：`tools/e2e-patch.mjs`（25，合成的「juus」卡 + 拦截猫箱地址给占位图），`tools/unit/test-cardpatch.mjs`（22，含开场里的表情都在新立绘里），冒烟 [7k]。
 
+## 七·二十·五、图库暂时下线（v5.28.6）
+
+用户试用后觉得「图库功能问题有点大」，先下线、改天再研究（具体问题还没说，下次先问清楚）。
+`SG_ON = /[?&]gallery=1/`：没带这个参数时 `#btn-gallery`、`#cg-sg`、`#boot-gallery` 三个入口 `display:none`，`sgBootBtn()` 也不显示。
+代码、样式、测试都留着；`tools/e2e-patch.mjs` 用 `?gallery=1` 测，并先断言默认是藏着的。
+重新上线：把 `SG_ON` 改成 `true`（或删掉判断）、发版。
+
 ## 七·二十一、版本更新提示（v5.28.4）
 
 - 页面版本：`index.html` 的 `<meta name="gal-version">`，app.js 顶上读成 `APP_VER`；线上最新：仓库根目录 `version.json`（`{version, notes}`）。
