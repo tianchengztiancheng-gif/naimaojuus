@@ -331,5 +331,6 @@ html.m-mobile .sg-pics{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
 html.m-mobile .sg-pic .ph{height:140px}
 html.m-mobile .sg-body{padding:12px 12px 20px}
 html.m-mobile #sg-q{width:100%;order:9;margin-left:0}
+html.m-mobile .sg-load{order:10;width:100%}
 html.m-mobile .sg-view figure{max-width:calc(100% - 20px)}
 html.m-mobile .sg-nav{top:auto;bottom:18px;transform:none;width:42px;height:42px}

@@ -5522,44 +5522,80 @@
       return { name: n, outfits: Object.keys(outs).length, exprs: exprs, pics: pics, thumb: face ? ex[face][0] : '' };
     });
   }
-  /* v5.28.6：图库问题还多，先下线 —— 三个入口全藏起来，代码留着。网址带 ?gallery=1 才打开（调试、测试用） */
-  var SG_ON = /[?&]gallery=1\b/.test(location.search);
+  /* v5.28.6 下线过一次（一次要太多图，转圈 / 加载失败），v5.29 改了拉图的办法重新上线。
+     网址带 ?gallery=0 可以临时关掉（三个入口全藏起来） */
+  var SG_ON = !/[?&]gallery=0\b/.test(location.search);
   function sgBootBtn() {
     var b = $('boot-gallery'); if (!b) return;
     var n = SG_ON ? sgChars().length : 0;
     b.hidden = !n;
     if ($('boot-gallery-n')) $('boot-gallery-n').textContent = n + ' 位';
   }
-  /* ---------- 图库的图怎么拉（v5.28.1） ----------
-     以前列表页 70 多张封面、角色页几十张原图（一张 1MB 多）一起发请求，网慢的时候半天一张都出不来，也看不出卡在哪。
+  /* ---------- 图库的图怎么拉（v5.28.1 → v5.29 重写） ----------
+     v5.28 下线前的毛病：一页几十张一起要，转圈很久，有的最后加载失败。查下来是三件事叠在一起：
+       ① 一格挂了会顺着「缩略图 → 2048 中转大图 → 1MB 原 PNG」一路试下去，每步等满 25 秒，
+          一格最坏占住一个并发位 75 秒，而并发位总共 3 个 —— 后面的全堵着
+       ② 格子进了可视区就排进队，滚出去也不撤，往下一划能堆上百张
+       ③ 拉到的图只在内存里，关掉页面就没了，下次又从头让 wsrv 现拉现缩
      现在：
-       · 封面和缩略图走 ImgNet.thumbOf()（wsrv.nl 缩成小 webp，二三十 KB），中转不通再拉原图
-       · 一次最多同时拉 SG_PAR 张，按在页面上的先后排队；滚到才排进去（IntersectionObserver）
-       · 每张都有进度条：fetch 读流算百分比；服务器不给长度、或者不让跨域读的，退回 <img> + 走马灯式的条
-       · 离开这一页（返回 / 换服装 / 关掉）就把没拉完的全停掉
-       · 拉过的存成 blob 地址，同一次打开里来回切不重新下
-       · 大图看的是原图，也有进度条，先垫着缩略图 */
-  var SG_PAR = 3, sgQ = [], sgBusy = 0, sgGen = 0, sgCache = {}, sgObs = null, sgAborts = [];
-  /* w：缩略图长边；SG_BIG = 大图（经中转的原分辨率 webp，比 1MB 的原 PNG 小得多，先试它，不通再拉原图） */
+       · 缩略图一个尺寸（SG_TW，按屏幕像素密度 160 / 320），封面和角色页共用 —— 列表页拉过的封面点进去不用再拉
+       · 缩略图本体存 IndexedDB（core/thumbcache.js），第二次打开直接本地读
+       · 格子只要缩略图：挂了歇一下再试一次，还不行才考虑原图（而且只在「直连确实通」的时候），都不行就标「点一下重试」
+       · 超时按「多久没收到数据」算（首字节 15 秒、中途 8 秒），不是死等 25 秒
+       · 只排看得见的：滚出去、还没开始拉的撤掉，滚回来再排
+       · 并发 2~6 自己调：顺就加，慢 / 报错 / 429 就减半
+       · 顶上一行「已加载 / 失败」，失败的可以一键重试
+       · 离开这一页（返回 / 换服装 / 关掉）就把没拉完的全停掉；关图库时内存里的 blob 地址全部释放
+       · 大图（SG_BIG）看的是原分辨率 webp，有进度条，先垫着缩略图；看完顺手预取下一张 */
+  var SG_PAR_MIN = 2, SG_PAR_MAX = 6, sgPar = 4, sgFast = 0;
+  var sgQ = [], sgBusy = 0, sgGen = 0, sgCache = {}, sgObs = null, sgAborts = [];
   var SG_BIG = 1600;
-  function sgThumb(url, w) { return w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w, w >= SG_BIG ? 90 : 82) : null; }
+  /* 缩略图长边：格子 130~150 CSS 像素宽，高分屏按 2 倍要。只分两档，免得不同设备缓存的 key 各不一样 */
+  var SG_TW = (window.devicePixelRatio || 1) > 1.25 ? 320 : 160;
+  var SG_STALL_FIRST = 15000, SG_STALL = 8000, SG_CAP = 40000;
+  function sgThumb(url, w) { return w && ImgNet.thumbOf ? ImgNet.thumbOf(url, w, w >= SG_BIG ? 90 : 80) : null; }
+  /** 直连这个图床是不是确实通（拉成功过、没被判「不通」）—— 只有这样格子才值得退回去拉 1MB 的原图 */
+  function sgDirectOk(url) {
+    try {
+      var h = ImgNet.hostOf(url), s = (ImgNet.stats() || {})[h];
+      return !!(s && s.ok > 0 && !s.bad) && ImgNet.config().mode !== 'relay';
+    } catch (e) { return false; }
+  }
+  /** 要试的地址，按顺序。{src, thumb, wait} —— wait = 试之前先歇几毫秒（同一个地址第二次试） */
   function sgCands(url, w) {
-    var out = [], t = sgThumb(url, w);
-    if (t) out.push(t);
-    (ImgNet.candidates ? ImgNet.candidates(url) : [ImgNet.srcFor(url)]).forEach(function (c) { if (out.indexOf(c) < 0) out.push(c); });
+    var t = sgThumb(url, w), out = [];
+    var all = ImgNet.candidates ? ImgNet.candidates(url) : [ImgNet.srcFor(url)];
+    if (!t) return all.map(function (s) { return { src: s }; });          // 只直连 / 自定义中转：没有缩略图可要
+    out.push({ src: t, thumb: 1 });
+    if (w < SG_BIG) {
+      out.push({ src: t, thumb: 1, wait: 1500 });                           // wsrv 头一回现拉现缩常常超时，第二次多半就有了
+      if (sgDirectOk(url)) out.push({ src: url });
+      return out;
+    }
+    all.forEach(function (s) { out.push({ src: s }); });                     // 大图：中转 webp 不通再走老路
     return out;
   }
-  /** 拉一张：按候选地址挨个试，onProg(0~1 或 -1 = 不知道进度)。resolve 能用的地址（blob: 或原地址），全挂了 resolve null */
+  function sgAdapt(ok, ms, code) {
+    if (!ok || ms > 8000 || code === 429) { sgPar = Math.max(SG_PAR_MIN, Math.floor(sgPar / 2)); sgFast = 0; return; }
+    if (ms < 2500 && ++sgFast >= 4) { sgFast = 0; sgPar = Math.min(SG_PAR_MAX, sgPar + 1); sgPump(); }
+  }
+  function sgKey(url, w) { return url + '|' + (w || 0); }
+  function sgKeep(key, blob) {
+    var u = URL.createObjectURL(blob);
+    sgCache[key] = u;
+    return u;
+  }
+  /** 拉一张：onProg(0~1 或 -1 = 不知道进度)。resolve 能用的地址（blob: 或原地址），全挂了 resolve null；换页了 reject 'stale' */
   function sgFetch(url, w, onProg, gen) {
-    var key = url + '|' + (w || 0);
+    var key = sgKey(url, w);
     if (sgCache[key]) { onProg(1); return Promise.resolve(sgCache[key]); }
-    var cands = sgCands(url, w);
+    var cands = sgCands(url, w), k = 0, lastCode = 0;
     function viaImg(src) {
       return new Promise(function (res) {
         onProg(-1);
         var im = new Image(), done = false;
         var t = setTimeout(function () { if (!done) { done = true; im.src = ''; res(null); } }, 25000);
-        im.onload = function () { if (!done) { done = true; clearTimeout(t); res(src); } };
+        im.onload = function () { if (!done) { done = true; clearTimeout(t); res({ src: src }); } };
         im.onerror = function () { if (!done) { done = true; clearTimeout(t); res(null); } };
         im.src = src;
       });
@@ -5568,44 +5604,73 @@
       if (!window.fetch || !window.ReadableStream) return viaImg(src);
       var ac = window.AbortController ? new AbortController() : null;
       if (ac) sgAborts.push(ac);
-      /* 一个地址最多等 25 秒（直连被墙时会一直挂着），等不到换下一个 */
-      var timer = setTimeout(function () { if (ac) ac.abort(); }, 25000);
+      /* 「多久没收到数据」才算超时：慢但在动的不掐，挂死的（直连被墙常见）早点放弃 */
+      var stall = null, cap = setTimeout(kill, SG_CAP);
+      function kill() { if (ac) ac.abort(); }
+      function arm(ms) { clearTimeout(stall); stall = setTimeout(kill, ms); }
+      function done() { clearTimeout(stall); clearTimeout(cap); if (ac) { var i = sgAborts.indexOf(ac); if (i >= 0) sgAborts.splice(i, 1); } }
+      arm(SG_STALL_FIRST);
       return fetch(src, ac ? { signal: ac.signal } : {}).then(function (r) {
+        lastCode = r.status;
         if (!r.ok) throw new Error('HTTP ' + r.status);
+        arm(SG_STALL);
         var total = +r.headers.get('content-length') || 0;
+        var type = r.headers.get('content-type') || 'image/png';
         if (!r.body || !r.body.getReader) return r.blob();
         var reader = r.body.getReader(), got = 0, parts = [];
         onProg(total ? 0 : -1);
         return (function pump() {
           return reader.read().then(function (x) {
             if (gen !== sgGen) { try { reader.cancel(); } catch (e) {} throw new Error('stale'); }
-            if (x.done) return new Blob(parts, { type: r.headers.get('content-type') || 'image/png' });
+            if (x.done) return new Blob(parts, { type: type });
+            arm(SG_STALL);
             parts.push(x.value); got += x.value.length;
             if (total) onProg(Math.min(0.99, got / total));
             return pump();
           });
         })();
       }).then(function (blob) {
-        clearTimeout(timer);
+        done();
         if (!blob || !blob.size || !/^image\//.test(blob.type || 'image/')) return null;
-        return URL.createObjectURL(blob);
+        return { blob: blob };
       }, function (e) {
-        clearTimeout(timer);
+        done();
         if (e && e.message === 'stale') throw e;
-        /* 不让跨域读（自定义中转常见）：退回 <img>，只是没有百分比 */
-        if (e && e.name === 'TypeError') return viaImg(src);
+        /* 不让跨域读（自定义中转常见）：退回 <img>，只是没有百分比。HTTP 错误码不算这种 */
+        if (e && e.name === 'TypeError' && !lastCode) return viaImg(src);
         return null;
       });
     }
-    var thumb = sgThumb(url, w), k = 0;
     function next() {
       if (gen !== sgGen) return Promise.reject(new Error('stale'));
       if (k >= cands.length) return Promise.resolve(null);
-      var src = cands[k++];
-      return viaFetch(src).then(function (got) {
-        /* 缩略图的成败不算进图片网络的统计（那是舞台判断「直连通不通」用的） */
-        if (src !== thumb) { try { ImgNet.note(src, !!got); } catch (e) {} }
-        if (got) { sgCache[key] = got; onProg(1); return got; }
+      var c = cands[k++], t0 = Date.now();
+      lastCode = 0;
+      var go = function () {
+        if (gen !== sgGen) return Promise.reject(new Error('stale'));
+        return viaFetch(c.src).then(function (got) {
+          sgAdapt(!!got, Date.now() - t0, lastCode);
+          /* 缩略图的成败不算进图片网络的统计（那是舞台判断「直连通不通」用的） */
+          if (!c.thumb) { try { ImgNet.note(c.src, !!got); } catch (e) {} }
+          if (!got) return next();
+          onProg(1);
+          if (got.blob) {
+            if (w && w < SG_BIG && window.ThumbCache) ThumbCache.put(key, got.blob);
+            return sgKeep(key, got.blob);
+          }
+          sgCache[key] = got.src;
+          return got.src;
+        });
+      };
+      /* 429 = 被限流了，多歇一会儿 */
+      var wait = (c.wait || 0) * (lastCode === 429 ? 3 : 1);
+      return wait ? new Promise(function (r) { setTimeout(r, wait); }).then(go) : go();
+    }
+    /* 先看本地缓存（缩略图才有） */
+    if (w && w < SG_BIG && window.ThumbCache && ThumbCache.available()) {
+      return ThumbCache.get(key).then(function (b) {
+        if (gen !== sgGen) throw new Error('stale');
+        if (b) { onProg(1); return sgCache[key] || sgKeep(key, b); }
         return next();
       });
     }
@@ -5622,48 +5687,100 @@
     if (p < 0) { box.classList.add('sg-indet'); if (pct) pct.textContent = ''; return; }
     box.classList.remove('sg-indet');
     bar.style.width = Math.round(p * 100) + '%';
-    if (pct) pct.textContent = p >= 1 ? '' : Math.round(p * 100) + '%';
+    if (pct) pct.textContent = p >= 1 || p <= 0 ? '' : Math.round(p * 100) + '%';
+  }
+  /** 一格拉完 / 挂了，把图放上去 */
+  function sgFill(box, src) {
+    box.classList.remove('sg-wait', 'sg-indet', 'sg-queued', 'sg-run');
+    if (!src) {
+      box.classList.add('sg-bad');
+      var pct = box.querySelector('.sg-pct');
+      if (pct) pct.innerHTML = '加载失败<small>点一下重试</small>';
+      sgLoadStat();
+      return;
+    }
+    box.classList.remove('sg-bad');
+    var img = box.querySelector('img') || document.createElement('img');
+    img.alt = ''; img.decoding = 'async'; img.src = src;
+    if (!img.parentNode) box.insertBefore(img, box.firstChild);
+    box.classList.add('sg-ok');
+    if (sgObs) sgObs.unobserve(box);
+    sgLoadStat();
   }
   function sgEnqueue(box) {
-    if (box._q) return;
+    if (box._q || box.classList.contains('sg-ok')) return;
     box._q = 1; box.classList.add('sg-queued');
+    var key = sgKey(box.getAttribute('data-src'), +box.getAttribute('data-w'));
+    if (sgCache[key]) { box._q = 0; sgFill(box, sgCache[key]); return; }
     sgQ.push(box); sgPump();
   }
+  /** 滚出去了、还没开始拉的撤掉（滚回来会重新排） */
+  function sgDequeue(box) {
+    if (!box._q || box._run) return;
+    var i = sgQ.indexOf(box);
+    if (i >= 0) sgQ.splice(i, 1);
+    box._q = 0; box.classList.remove('sg-queued');
+  }
   function sgPump() {
-    while (sgBusy < SG_PAR && sgQ.length) {
+    var v = $('sg-view');
+    if (v && !v.hidden) return;
+    while (sgBusy < sgPar && sgQ.length) {
       var box = sgQ.shift();
-      if (!box.isConnected) continue;
+      if (!box.isConnected || !box._q) continue;
       sgBusy++;
       (function (box, gen) {
-        box.classList.remove('sg-queued');
+        box._run = 1;
+        box.classList.remove('sg-queued'); box.classList.add('sg-run');
         sgSetProg(box, 0);
         sgFetch(box.getAttribute('data-src'), +box.getAttribute('data-w'), function (p) { sgSetProg(box, p); }, gen)
           .then(function (src) {
+            box._run = 0; box._q = 0;
             if (gen !== sgGen || !box.isConnected) return;
-            box.classList.remove('sg-wait', 'sg-indet');
-            if (!src) { box.classList.add('sg-bad'); box.querySelector('.sg-pct').textContent = '加载失败'; return; }
-            var img = document.createElement('img');
-            img.alt = ''; img.decoding = 'async'; img.src = src;
-            box.insertBefore(img, box.firstChild);
-            box.classList.add('sg-ok');
-          }, function () {})
+            sgFill(box, src);
+          }, function () { box._run = 0; box._q = 0; })
           .then(function () { if (gen === sgGen) { sgBusy--; sgPump(); } });
       })(box, sgGen);
     }
   }
+  /** 失败的格子重新排（点一下 / 「重试失败的」） */
+  function sgRetry(boxes) {
+    boxes.forEach(function (box) {
+      box.classList.remove('sg-bad'); box.classList.add('sg-wait');
+      var pct = box.querySelector('.sg-pct'); if (pct) pct.textContent = '';
+      box._q = 0;
+      sgEnqueue(box);
+    });
+    sgLoadStat();
+  }
+  /** 顶上那行：这一页拉了多少、挂了多少 */
+  function sgLoadStat() {
+    var el = $('sg-load'); if (!el) return;
+    var all = PA2('#sg-body .ph[data-src]'), ok = 0, bad = 0;
+    all.forEach(function (b) { if (b.classList.contains('sg-ok')) ok++; else if (b.classList.contains('sg-bad')) bad++; });
+    if (!all.length || (ok === all.length)) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = '已加载 ' + ok + ' / ' + all.length + (bad ? ' · <b>失败 ' + bad + '</b> <button type="button" id="sg-retry">重试失败的</button>' : '');
+  }
   /** 换页：停掉没拉完的，排新一页的（滚到才排） */
   function sgReset() {
     sgGen++;
+    sgQ.forEach(function (b) { b._q = 0; });
     sgQ = []; sgBusy = 0;
     sgAborts.forEach(function (a) { try { a.abort(); } catch (e) {} }); sgAborts = [];
     if (sgObs) { sgObs.disconnect(); sgObs = null; }
   }
+  /** 关图库：内存里的 blob 地址全放掉（缩略图在 IndexedDB 里还有，下次打开照样快） */
+  function sgFree() {
+    Object.keys(sgCache).forEach(function (k) { if (/^blob:/.test(sgCache[k])) { try { URL.revokeObjectURL(sgCache[k]); } catch (e) {} } });
+    sgCache = {};
+  }
   function sgWatch(root) {
     var boxes = PA2('#sg-body .ph[data-src]');
+    sgLoadStat();
     if (window.IntersectionObserver) {
       sgObs = new IntersectionObserver(function (ents) {
-        ents.forEach(function (en) { if (en.isIntersecting) { sgEnqueue(en.target); sgObs.unobserve(en.target); } });
-      }, { root: root, rootMargin: '300px 0px' });
+        ents.forEach(function (en) { if (en.isIntersecting) sgEnqueue(en.target); else sgDequeue(en.target); });
+      }, { root: root, rootMargin: '200px 0px' });
       boxes.forEach(function (b) { sgObs.observe(b); });
     } else boxes.forEach(sgEnqueue);
   }
@@ -5673,7 +5790,9 @@
     $('sg-modal').hidden = false;
     renderGallery();
   }
-  function closeGallery() { sgReset(); $('sg-modal').hidden = true; $('sg-view').hidden = true; }
+  function closeGallery() { sgReset(); sgFree(); $('sg-modal').hidden = true; $('sg-view').hidden = true; }
+  /** 关大图：大图看着的时候格子不开新请求（带宽让给大图），关了接着拉 */
+  function sgCloseView() { $('sg-view').hidden = true; sgPump(); }
   function renderGallery() {
     var body = $('sg-body');
     $('sg-view').hidden = true;
@@ -5692,7 +5811,7 @@
       /* 列表页每人只有一张固定封面（微笑 / 平静 / 开心优先），而且是小图；点进去才拉这个人的全部差分 */
       body.innerHTML = list.length ? '<div class="sg-grid">' + list.map(function (c) {
         return '<button type="button" class="sg-char" data-sgwho="' + esc(c.name) + '">' +
-          (c.thumb ? sgBox(c.thumb, 400) : '<div class="ph"></div>') +
+          (c.thumb ? sgBox(c.thumb, SG_TW) : '<div class="ph"></div>') +
           '<b>' + esc(c.name) + '</b><i>' + (c.outfits > 1 ? c.outfits + ' 套服装 · ' : '') + c.exprs + ' 种表情 · ' + c.pics + ' 张</i></button>';
       }).join('') + '</div>' : '<div class="sg-empty">没有名字里带「' + esc(q) + '」的角色。</div>';
       sgWatch(body);
@@ -5717,7 +5836,7 @@
     });
     $('sg-stat').textContent = SG.outfit + ' · ' + Object.keys(ex).length + ' 种表情 · ' + SG.list.length + ' 张';
     body.innerHTML = '<div class="sg-pics">' + SG.list.map(function (p, i) {
-      return '<button type="button" class="sg-pic" data-sgi="' + i + '">' + sgBox(p.url, 480) +
+      return '<button type="button" class="sg-pic" data-sgi="' + i + '">' + sgBox(p.url, SG_TW) +
         '<span>' + esc(p.expr) + (p.of > 1 ? '<em>' + p.n + '/' + p.of + '</em>' : '') + '</span></button>';
     }).join('') + '</div>';
     body.scrollTop = 0;
@@ -5730,8 +5849,8 @@
     SG.idx = (i + SG.list.length) % SG.list.length;
     var p = SG.list[SG.idx], my = ++sgViewGen;
     var img = $('sg-img'), bar = $('sg-vbar');
-    img.src = sgCache[p.url + '|480'] || '';
-    img.classList.toggle('sg-blur', !sgCache[p.url + '|' + SG_BIG]);
+    img.src = sgCache[sgKey(p.url, SG_TW)] || '';
+    img.classList.toggle('sg-blur', !sgCache[sgKey(p.url, SG_BIG)]);
     $('sg-cap').innerHTML = esc(SG.who) + ' · ' + esc(p.expr) + (p.of > 1 ? ' ' + p.n + '/' + p.of : '') +
       '<small>' + (SG.idx + 1) + ' / ' + SG.list.length + '</small>';
     $('sg-view').hidden = false;
@@ -5743,7 +5862,12 @@
     }, sgGen).then(function (src) {
       if (my !== sgViewGen) return;
       if (bar) bar.hidden = true;
-      if (src) { img.src = src; img.classList.remove('sg-blur'); }
+      if (src) {
+        img.src = src; img.classList.remove('sg-blur');
+        /* 顺手预取下一张（多半要按 →），一次只预取一张 */
+        var nx = SG.list[(SG.idx + 1) % SG.list.length];
+        if (nx && nx !== p && !sgCache[sgKey(nx.url, SG_BIG)]) sgFetch(nx.url, SG_BIG, function () {}, sgGen).then(null, function () {});
+      }
       else $('sg-cap').innerHTML += '<small class="bad">原图加载失败</small>';
     }, function () {});
   }
@@ -5848,6 +5972,10 @@
   $('sg-q').oninput = function () { SG.q = this.value; renderGallery(); };
   $('sg-modal').addEventListener('click', function (e) {
     if (e.target === this) { closeGallery(); return; }
+    if (e.target.closest('#sg-retry')) { sgRetry(PA2('#sg-body .ph.sg-bad')); return; }
+    /* 挂了的格子：点一下是重拉，不是点进去 */
+    var bad = e.target.closest('.ph.sg-bad');
+    if (bad) { e.preventDefault(); sgRetry([bad]); return; }
     var c = e.target.closest('[data-sgwho]');
     if (c) { SG.who = c.getAttribute('data-sgwho'); SG.outfit = null; renderGallery(); return; }
     var t = e.target.closest('[data-sgout]');
@@ -5857,13 +5985,13 @@
   });
   $('sg-prev').onclick = function () { sgShow(SG.idx - 1); };
   $('sg-next').onclick = function () { sgShow(SG.idx + 1); };
-  $('sg-vx').onclick = function () { $('sg-view').hidden = true; };
-  $('sg-view').addEventListener('click', function (e) { if (e.target === this || e.target.tagName === 'FIGURE') this.hidden = true; });
+  $('sg-vx').onclick = sgCloseView;
+  $('sg-view').addEventListener('click', function (e) { if (e.target === this || e.target.tagName === 'FIGURE') sgCloseView(); });
   /* 图库开着时方向键 / Esc 归它管，别让舞台跟着翻句 */
   document.addEventListener('keydown', function (e) {
     if ($('sg-modal').hidden) return;
     var view = !$('sg-view').hidden;
-    if (e.key === 'Escape') { if (view) $('sg-view').hidden = true; else closeGallery(); }
+    if (e.key === 'Escape') { if (view) sgCloseView(); else closeGallery(); }
     else if (view && e.key === 'ArrowLeft') sgShow(SG.idx - 1);
     else if (view && e.key === 'ArrowRight') sgShow(SG.idx + 1);
     else if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName || '')) return;

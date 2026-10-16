@@ -42,6 +42,21 @@ fs.writeFileSync(path.join(OUT, 'mobile-card.json'), JSON.stringify(card));
 
 const exe = ['/opt/pw-browsers/chromium'].find(f => fs.existsSync(f));
 const b = await chromium.launch(exe ? { executablePath: exe } : {});
+/* 网络一律拦下来。本地装了素材包（resource/juus）时，柴郡 / 贝尔法斯特 / 长门在素材包里有表情差分（猫箱地址），
+   查立绘时优先于卡里的默认立绘 —— 不拦的话测试机连不上猫箱，三个人的立绘全挂、整层藏掉，「台上几个人」全错。
+   远程图片给一张占位图，其余请求直接断开：有没有素材包、能不能上网，结果都一样 */
+const PH = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="700"><rect width="300" height="700" rx="40" fill="#888"/></svg>');
+async function newCtx(opt) {
+  const ctx = await b.newContext(opt);
+  await ctx.route('**/*', r => {
+    const u = r.request().url();
+    if (/^(file|data|blob):/.test(u)) return r.continue();
+    if (r.request().resourceType() === 'image' || /\.(png|jpe?g|webp|gif)(\?|$)|wsrv\.nl/i.test(u))
+      return r.fulfill({ status: 200, contentType: 'image/svg+xml', headers: { 'Access-Control-Allow-Origin': '*' }, body: PH });
+    return r.abort();
+  });
+  return ctx;
+}
 
 /** 元素在不在屏幕里、中心点是不是它自己（没被别的东西压住）、多大 */
 const probe = (p, sel) => p.evaluate((sel) => {
@@ -79,7 +94,7 @@ const VIEWS = [
 
 for (const v of VIEWS) {
   console.log(`\n[${v.name} ${v.w}×${v.h}]`);
-  const ctx = await b.newContext({ viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const ctx = await newCtx({ viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('file://' + ROOT + '/index.html');
@@ -188,7 +203,7 @@ for (const v of VIEWS) {
 
 console.log('\n[转屏：竖 → 横 → 竖]');
 {
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
   await p.goto('file://' + ROOT + '/index.html');
   await p.waitForTimeout(500);
@@ -207,7 +222,7 @@ console.log('\n[转屏：竖 → 横 → 竖]');
 
 console.log('\n[电脑模式不受影响 + 手动切换]');
 {
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await newCtx({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
   await p.goto('file://' + ROOT + '/index.html');
   await p.waitForTimeout(500);
@@ -230,7 +245,7 @@ console.log('\n[电脑模式不受影响 + 手动切换]');
 }
 {
   /* 手机上也能手动切回电脑版（有人就是想要电脑版的样子） */
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
   await p.goto('file://' + ROOT + '/index.html');
   await p.waitForTimeout(400);
@@ -247,7 +262,7 @@ console.log('\n[手动横竖屏：手机转不过来也能横屏]');
 {
   /* 有人反馈「手机捣鼓半天切换不了横屏」（方向锁 / 浏览器不转）。
      手机一直竖着拿（视口 390×844 不变），点工具栏的「横」→ 整页转 90° 按横屏排。 */
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('file://' + ROOT + '/index.html');
@@ -318,7 +333,7 @@ console.log('\n[手动横竖屏：手机转不过来也能横屏]');
 }
 {
   /* 反过来：手机横着卡住了，想竖屏玩 */
-  const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const ctx = await newCtx({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   await p.goto('file://' + ROOT + '/index.html');
   await p.waitForTimeout(400);
@@ -339,7 +354,7 @@ console.log('\n[手动横竖屏：手机转不过来也能横屏]');
 
 console.log('\n[工具栏收起]');
 for (const v of [{ name: '手机竖屏', w: 360, h: 640, mob: true }, { name: '电脑', w: 1280, h: 800, mob: false }]) {
-  const ctx = await b.newContext(v.mob ? { viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true }
+  const ctx = await newCtx(v.mob ? { viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true }
     : { viewport: { width: v.w, height: v.h } });
   const p = await ctx.newPage();
   await p.goto('file://' + ROOT + '/index.html');

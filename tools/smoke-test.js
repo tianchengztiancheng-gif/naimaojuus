@@ -46,7 +46,7 @@ const FILES = [
   'core/crash.js', 'core/cardres.js', 'core/cardpatch.js', 'resource/juus-patch.js', 'core/tokens.js', 'core/vector.js',
   'core/imagegen.js', 'core/snapshot.js', 'core/gallery.js', 'core/cg.js',
   'core/resolver.js', 'core/worldbook.js', 'core/regex.js', 'core/prompt.js', 'core/script.js',
-  'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'core/customsprites.js', 'app/app.js'
+  'core/phone.js', 'core/memory.js', 'core/engine.js', 'core/api.js', 'core/savetree.js', 'core/imgnet.js', 'core/thumbcache.js', 'core/opening.js', 'core/storage.js', 'core/editors.js', 'core/customsprites.js', 'app/app.js'
 ];
 
 const qa0 = s2 => [...d.querySelectorAll(s2)];
@@ -1439,6 +1439,9 @@ console.log('\n[7k] 卡修订包 / 立绘图库（v5.28）');
   ok('载卡时打修订包（CardRes 之后、自定义立绘之前）', /CardRes\.apply\(card\)[\s\S]{0,600}CardPatch\.apply\(card, this\)[\s\S]{0,400}CustomSprites\.forget/.test(fs.readFileSync(path.join(ROOT, 'core/engine.js'), 'utf8')));
   ok('开场列表接上修订包的开场', /CardPatch\.openings\(card\)/.test(fs.readFileSync(path.join(ROOT, 'app/app.js'), 'utf8')));
   ok('工具栏和开场引导都有立绘图库入口', !!d.getElementById('btn-gallery') && !!d.getElementById('boot-gallery') && !!d.getElementById('sg-modal'));
+  ok('v5.29 图库重新上线：工具栏入口默认不藏', d.getElementById('btn-gallery').style.display !== 'none' && !d.getElementById('btn-gallery').hidden);
+  ok('缩略图本地缓存 ThumbCache 加载了', !!w.ThumbCache && typeof w.ThumbCache.get === 'function' && typeof w.ThumbCache.put === 'function');
+  ok('index.html 加载 thumbcache.js（在 app.js 之前）', /thumbcache\.js[\s\S]*app\/app\.js/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   d.getElementById('btn-gallery').click();
   ok('图库能打开，列出有差分的角色', !d.getElementById('sg-modal').hidden && d.querySelectorAll('.sg-char').length === Object.keys(w.RESOURCE.characters).filter(n => Object.keys((w.RESOURCE.characters[n] || {}).outfits || {}).length).length);
   const first = d.querySelector('.sg-char');

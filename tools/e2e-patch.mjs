@@ -58,14 +58,14 @@ await ctx.route('**/*', r => {
 });
 const p = await ctx.newPage();
 const errs = []; p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-/* 图库 v5.28.6 起默认下线，?gallery=1 才开；先确认默认是藏着的 */
-await p.goto('file://' + ROOT + '/index.html?title=0'); await p.waitForTimeout(700);
+/* 图库 v5.28.6 下线过、v5.29 重新上线：?gallery=0 才藏起来 */
+await p.goto('file://' + ROOT + '/index.html?title=0&gallery=0'); await p.waitForTimeout(700);
 const sgOff = await p.evaluate(() => ['btn-gallery', 'cg-sg', 'boot-gallery'].map(id => { const e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; }));
-await p.goto('file://' + ROOT + '/index.html?gallery=1'); await p.waitForTimeout(900);
+await p.goto('file://' + ROOT + '/index.html'); await p.waitForTimeout(900);
 const E = (f, a) => p.evaluate(f, a);
 
 console.log('\n[A 修订包]');
-ok('图库默认下线：工具栏、相册、引导页三个入口都藏着', sgOff.every(Boolean), JSON.stringify(sgOff));
+ok('?gallery=0：工具栏、相册、引导页三个入口都藏着', sgOff.every(Boolean), JSON.stringify(sgOff));
 await p.setInputFiles('#f-card', OUT + '/patch-other.json'); await p.waitForTimeout(500);
 const o = await E(() => ({ ids: window.__gal.eng.patchStats && window.__gal.eng.patchStats.ids, jervis: !!RESOURCE.characters['贾维斯'],
   ops: document.getElementById('opening-sel').options.length }));
@@ -119,7 +119,7 @@ console.log('\n[C 立绘图库]');
 imgReq.length = 0;
 await p.click('#btn-gallery'); await p.waitForTimeout(1500);
 const cov = await E(() => ({ boxes: document.querySelectorAll('.sg-char .ph[data-src]').length, ok: document.querySelectorAll('.sg-char .ph.sg-ok img').length }));
-ok('列表页：每人一张封面，走缩略图（wsrv 小图），不拉原图', cov.ok >= 1 && imgReq.length >= 1 && imgReq.every(u => /wsrv\.nl.*&w=400/.test(u)), JSON.stringify(cov) + ' ' + imgReq.slice(0, 2).join(' '));
+ok('列表页：每人一张封面，走缩略图（wsrv 小图），不拉原图', cov.ok >= 1 && imgReq.length >= 1 && imgReq.every(u => /wsrv\.nl.*&w=(160|320)&/.test(u)), JSON.stringify(cov) + ' ' + imgReq.slice(0, 2).join(' '));
 const g1 = await E(() => ({ open: !document.getElementById('sg-modal').hidden, names: [...document.querySelectorAll('.sg-char b')].map(x => x.textContent),
   stat: document.getElementById('sg-stat').textContent }));
 /* 本地装了素材包（resource/juus）时角色会多，看包含关系 */
@@ -152,7 +152,7 @@ await p.fill('#sg-q', '贾维斯'); await p.waitForTimeout(300);
 imgReq.length = 0;
 await p.click('.sg-char'); await p.waitForTimeout(2500);
 const g3 = await E(() => ({ n: document.querySelectorAll('.sg-pic').length, ok: document.querySelectorAll('.sg-pic .ph.sg-ok').length }));
-ok('点进贾维斯才拉她的差分：缩略图，排队拉', imgReq.length >= 3 && imgReq.length <= g3.n && imgReq.every(u => /wsrv\.nl.*&w=480/.test(u)) && g3.ok >= 3,
+ok('点进贾维斯才拉她的差分：缩略图，排队拉', imgReq.length >= 3 && imgReq.length <= g3.n && imgReq.every(u => /wsrv\.nl.*&w=(160|320)&/.test(u)) && g3.ok >= 3,
    imgReq.length + '/' + g3.n + ' ' + imgReq[0]);
 imgReq.length = 0;
 await p.click('.sg-pic[data-sgi="0"]'); await p.waitForTimeout(1200);
