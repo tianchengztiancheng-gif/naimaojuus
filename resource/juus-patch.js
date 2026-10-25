@@ -377,10 +377,14 @@
 
   window.CardPatch.register({
     id: 'juus',
-    /* 认卡：名字里有 juus / 奶猫崛起（原版和奶猫版都是这个名字） */
+    /* 认卡：名字里有 juus / 奶猫崛起（原版和奶猫版都是这个名字）。
+       已经打过修订包的卡（酒馆版 apply-juus-patch.py 打出来的，世界书里有「贾维斯差分」）不再打：
+       再打一遍开场会重复、飞龙 / 苍龙的原皮会被对调回去。内置卡另有标记，见 core/cardpatch.js */
     match: function (card) {
       var d = (card && (card.data || card)) || {};
-      return /juus|奶猫崛起/i.test(String(d.name || ''));
+      if (!/juus|奶猫崛起/i.test(String(d.name || ''))) return false;
+      var ents = (d.character_book && d.character_book.entries) || [];
+      return !ents.some(function (e) { return e && e.comment === '贾维斯差分'; });
     },
     sprites: { '贾维斯': { '常服': SPRITES['贾维斯'] }, '雅努斯': { '常服': SPRITES['雅努斯'] } },
     dropSprites: ['巴尔的摩', '布莱默顿', '武藏', '威尔士', '威尔士亲王'],

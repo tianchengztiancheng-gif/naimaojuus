@@ -163,12 +163,22 @@
     return del(SLOT + id).then(function () { return del(META + id); });
   }
 
-  /* ---------- 素材（角色卡 / 预设） ---------- */
+  /* ---------- 素材（角色卡 / 预设 / 附加世界书） ---------- */
+  /* 存的是玩家「换用自己的卡」载入的那张（custom: true）。v5.30 起 juus 卡内置在仓库里，
+     不存；v5.29 及更早存下来的卡没有 custom 标记，app.js 据此认出旧的 juus 卡换成内置的 */
   function putCard(json, name) {
     if (mode !== 'idb') return Promise.resolve(null);   // 太大，localStorage 放不下
-    return set('card', { json: json, name: name, at: Date.now() });
+    return set('card', { json: json, name: name, at: Date.now(), custom: true });
   }
   function getCard() { return get('card'); }
+  function delCard() { return del('card'); }
+  /* 附加世界书 [{ name, json }]。和角色卡一样只进 IndexedDB：
+     世界书动辄几百 KB，塞 localStorage 会把它撑爆，存档也跟着掉进「只在本次会话有效」 */
+  function putWorldbooks(list) {
+    if (mode !== 'idb') return Promise.resolve(null);
+    return set('worldbooks', list || []);
+  }
+  function getWorldbooks() { return get('worldbooks'); }
   function putPreset(json, name) { return set('preset', { json: json, name: name, at: Date.now() }); }
   function getPreset() { return get('preset'); }
   function clearAll() {
@@ -190,7 +200,8 @@
   global.GalStore = {
     get: get, set: set, del: del, keys: keys,
     listSaves: listSaves, saveSlot: saveSlot, loadSlot: loadSlot, deleteSlot: deleteSlot,
-    putCard: putCard, getCard: getCard, putPreset: putPreset, getPreset: getPreset,
+    putCard: putCard, getCard: getCard, delCard: delCard, putPreset: putPreset, getPreset: getPreset,
+    putWorldbooks: putWorldbooks, getWorldbooks: getWorldbooks,
     clearAll: clearAll, local: local,
     backend: backend, backendNote: backendNote
   };

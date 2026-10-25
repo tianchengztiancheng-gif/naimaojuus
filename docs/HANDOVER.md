@@ -19,6 +19,8 @@
 
 ### 1. juus 角色卡（主要内容来源）
 
+> **v5.30 起这张卡内置在仓库里**（`resource/juus-card.js`），玩家不再载卡。下面是 v5.20 时的记录，见七·二十二。
+
 文件名：`juus_之奶猫崛起.json`，2.1MB，SillyTavern V2 角色卡。
 作者 kikukiku，碧蓝航线同人，群像卡（没有单一主角）。
 
@@ -598,6 +600,8 @@ node tools/smoke-test.js 你的卡.json
 ---
 
 ## 七·五、这个仓库里有什么、没有什么（v5.20 建库时定的）
+
+> v5.30 改了：kikukiku 同意后 juus 卡内容进仓库（`resource/juus-card.js`），见七·二十二。下面「只放引擎」的规矩对别的卡、预设、`resource/juus/` 预生成表照旧。
 
 ### 只放引擎
 
@@ -1269,6 +1273,56 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
   然后 `location.replace(当前路径 + ?u=新版本 + 原参数)`——网址变了浏览器不会用缓存的 index.html，里面的 `?v=` 跟着换新。回来后 `history.replaceState` 去掉 `u`、toast「已更新到」。
 - 手动入口：开场引导左下 `#boot-vercheck`、手机设置侧栏底部 `[data-vercheck]`（两处手机版式都藏着，手机上靠自动检查）。
 - 测试：`tools/e2e-update.mjs`（11，http://gal.test 路由，version.json 由测试给），冒烟 [7l]。
+
+## 七·二十二、juus 卡内置 / 补充立绘 / 附加世界书存住（v5.30）
+
+- **为什么**：kikukiku 同意奶猫（维护者）自立门户，juus 改成和超级奶猫的天青一样随仓库分发：玩家只导预设（破限）、想加再挂附加世界书。
+- **resource/juus-card.js**（`window.JUUS_CARD`，V3 卡，~1.2MB，进仓库）：`tools/build-juus-builtin.mjs` 生成，别手改。
+  底子 = `Claude outputs/酒馆版/juus之奶猫崛起-修订包v5.29.json`（原卡 + 酒馆版 apply-juus-patch.py 打过修订包），
+  世界书 = 维护者 10/24 在酒馆里导出的那本（140 条；比底卡多 初月 / 弗兰德尔 / 雅努斯 / 小舰娘，改了 贾维斯 / 【小手机】输出契约）。
+  转换照酒馆 `convertWorldInfoToCharacterBook`：没改的 134 条和底卡逐字段一致（生成时核对过）。
+  以后改世界书：`node tools/build-juus-builtin.mjs --worldbook 新导出的.json`（不给 --card 就以现有 juus-card.js 为底，只换世界书）。
+- **已合入标记**：`data.extensions.gal_builtin.merged_patches = ['juus']`，`CardPatch.matching()` 见到就跳过那个修订包。
+  不跳的后果：修订包 `worldbook` 里旧的「贾维斯」（`<character_information>` 那版）按 comment 盖掉新设定；医务室开局重复；
+  `swapDefaults` 把底卡里已经对调好的飞龙 / 苍龙原皮又换回去。`juus-patch.js` 的 match 另外认「卡里已有贾维斯差分条目」→ 不打（酒馆版打过的卡）。
+- **resource/juus-extra.js**（修订包 id `juus-extra`，认名字 juus / 奶猫崛起）：初月 39 种 / 66 张、弗兰德尔 36 种 / 65 张（链接来自维护者桌面的 初月.txt / 弗兰德尔.txt；
+  第一次的 131 个链接里 23 个是猫箱空文件（200 + 0 字节，在维护者自己的网络下逐个 fetch 确认），10/25 重传，新链接逐像素对过原图；单测里有「没混进空文件链接」的检查），
+  贾维斯 / 雅努斯各加「掀起裙子诱惑」2 张（透明背景；第一版维护者给的是白底图，10/25 换成透明版）。
+- **CardPatch 新选项**：`addSprites`（只加不换：同名表情追加、去重，原表情和别的服装不动，换成新对象）；
+  `diffEntries: true`（按最终立绘表重写 sprites / addSprites 里那些人的「X差分」条目，正文格式同卡里；已有就只换正文并开启，设置不动；
+  没有就新建，@深度 / 顺序照池里第一条开着的差分条目，uid `patch:<id>:diff:<名字>`）。名单跟着图走，AI 写的表情才点得到图。
+- **app.js**：`BUILTIN_CARD = window.JUUS_CARD`；`applyCard(card, src)` 统一换卡：`resetResources()`（RESOURCE / PHONE_RES 原地回到载卡前的预置表，
+  不然从内置卡换到自己的卡，内置卡的立绘还留着）→ `eng.loadCard` → `_wiSeq` 归零后重挂附加世界书 → 有预设就重载一次预设（预设自带的世界书）→ 开场列表。
+  启动：先同步载内置卡（IndexedDB 读不出也能玩），再读存的卡：有 `custom` 标记 → 用；没标记且是 juus 卡（v5.29 及以前存的）→ 删掉、用内置；别的卡 → 照用。
+  `loaded.cardSrc` = `builtin` / `custom`；引导页「用的是内置 juus 卡」/「你自己的卡「…」 换回内置卡」。
+- **附加世界书**：`GalStore.putWorldbooks / getWorldbooks`（只进 IndexedDB，和角色卡一样；塞 localStorage 会把存档挤到 memory 模式），
+  引导页列出每本「名字（条数） 删掉」。删 = 从列表去掉再 `applyCard` 重建池。
+- **storage**：`putCard` 存 `custom: true`；新增 `delCard`。注意 `get()` 取不存在的键返回的是 IDBRequest 对象不是 undefined（老行为），判断要看 `.json`。
+- **界面**：文件框顺序 预设 → 附加世界书 → 正则 → 换用自己的角色卡（可选，虚线框）；左栏「素材 · 预设与世界书」。
+- **测试**：`tools/unit/test-builtin.mjs`（29：机制 / 内置卡内容 / 载卡流程 / 剧本点图）、`tools/e2e-harbor.mjs`（27：港区）、`tools/e2e-builtin.mjs`（26：干净打开、四人触发、附加世界书存删、换卡换回、旧卡迁移）；
+  `e2e-card` 的「载卡前」基线改读 `__gal.resBase()`，`e2e-patch` 贾维斯 / 雅努斯各多 2 张。
+- **标题画面「港区」**（`#harbor`，`app/harbor.css`，app.js「标题画面」一节，内容 `resource/juus-title.js` 的 `window.GAL_TITLE`）：
+  盖在 #boot 上面（z 61），开页就显示（HTML 里不带 hidden，免得先闪一下引导页），`?title=0` 或没有 GAL_TITLE 就关掉。
+  出击 → `gotoBoot(没预设 0 / 没接口 1 / 都齐 3)`；继续 → 点 #btn-continue；存档 / 图鉴 → `hbAside()`：先收起港区、
+  给 body 加 `hb-aside`（把 #save-modal / #sg-modal 提到 z 66，不然被 #boot 盖住），`closeSaves / closeGallery` 里 `hbReturn()` 回来；
+  设置 → `gotoBoot(0)`；`enterGame()` 收起，`leaveGame()` 之后 `showHarbor()`；`renderRuns()` 里 `hbRuns(list)` 更新「继续」和顶栏。
+  背景走 `ImgNet.load`（直连不通换中转，拉不到留 CSS 画的底色）。台词 9 秒换一句，`night: true` 那句 0~5 点先说。
+  版式三套：桌面；竖屏（`max-width:700px` 或 `max-aspect-ratio:4/5`，选择器带 `html:not(.m-rot)`——强制横屏时视口是竖的但画面是横的）；
+  横屏手机（`max-height:480px` 媒体查询，外加 `html.m-mobile.m-land` 再套一次）。宽度一律用 % 不用 vw（强制横屏时 vw 是竖屏的宽）。
+  背景 `GAL_TITLE.bg` = 猫箱 5s82tb（维护者的 背景.png，2048×1152，人脸都在上半）。测试 `tools/e2e-harbor.mjs`（27）；
+  其余端到端测试网址都加了 `?title=0`（它们测的是别的东西，港区会挡住引导页的按钮）。
+- **版权提醒**：卡里 DEFAULT_SPRITES / SCENE_MAP / 头像表是碧蓝航线官方美术的 URL 索引，kikukiku 的同意管不到这部分（NOTICE 第三、四节写明了）。
+
+## 七·二十三、新开局 / 酒馆版 v4（v5.30.1）
+
+- **两个开局**（初月 · 重樱入港处、弗兰德尔 · 指挥官办公室）：原文在酒馆版源码 `tavern/openings/*.txt`，网页版这边抄进
+  `resource/juus-extra.js` 的第二个补丁 `juus-openings`（`openings: [{ n, t }]`，排在卡自带开场后面）。
+  match 认 juus 卡，但卡里 alternate_greetings 已经有这两段（找「一百六十九个小时」/「请……指挥官惩罚弗兰德尔」）就不打 —— 酒馆版 v4 卡已经带了。
+  写的时候对过：每句的表情都在 juus-extra 的立绘表里，地点在 SCENE_MAP 里，JSONPatch 和卡里其它开局同一个写法（整个 /人物 一次 replace）。
+- **酒馆版 v4 卡的首条开场白**是 `<Harbor>港区</Harbor>`（酒馆里靠卡内正则「[美化]港区标题画面」画成标题画面）。
+  `fillOpenings()` 见到首条只有 `<Harbor>…</Harbor>` 就不列「默认开场」。
+- 酒馆版那边：`tools/upgrade-juus-v4.mjs`（换世界书、写立绘表、差分条目、追加开局、装标题画面）→ `tools/build-tavern.mjs`（装 gal 前端和小手机），
+  测试 `tools/e2e-tavern-harbor.mjs`（53）。详见酒馆版 `tavern/README.md` 的 v4 一节。
 
 ## 八、当前数据一览
 

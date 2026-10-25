@@ -206,6 +206,7 @@ aside .x{background:none;border:0;color:var(--sub);font-size:20px;cursor:pointer
   margin:0!important;display:inline-block!important;transition:background .18s,border-color .18s}
 #boot .file:hover{background:rgba(96,205,240,.18);border-color:rgba(96,205,240,.65);color:#e2f0f8}
 #boot .file.ok{border-color:rgba(120,222,180,.55);color:#78deb4;background:rgba(120,222,180,.08)}
+#boot .file.file-opt:not(.ok){opacity:.7;border-style:dashed}
 #boot button{background:rgba(96,205,240,.1);border:1px solid rgba(96,205,240,.38);
   color:#60cdf0;border-radius:9px;padding:9px 20px;cursor:pointer;font:inherit;font-size:13px;
   transition:background .18s,border-color .18s,transform .14s}

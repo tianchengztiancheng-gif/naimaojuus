@@ -63,7 +63,7 @@ await p.route('http://gal.test/**', (route) => {
              : ext === '.js' || ext === '.mjs' ? 'text/javascript' : 'application/octet-stream';
   route.fulfill({ status: 200, contentType: type + '; charset=utf-8', body: fs.readFileSync(f) });
 });
-await p.goto('http://gal.test/index.html');
+await p.goto('http://gal.test/index.html?title=0');
 await p.waitForTimeout(900);
 
 console.log('\n[0] 前提：这个源上 IndexedDB 是可用的');
@@ -133,7 +133,7 @@ await p.evaluate(async () => {
     const q = indexedDB.deleteDatabase(x.name); q.onsuccess = q.onerror = q.onblocked = r;
   })));
 });
-await p.goto('http://gal.test/index.html');
+await p.goto('http://gal.test/index.html?title=0');
 await p.waitForTimeout(1000);
 const wiped = await p.evaluate(async () => (await window.GalStore.listSaves()).length);
 ok('清干净了（一份存档都没有）', wiped === 0, '还剩 ' + wiped + ' 份');

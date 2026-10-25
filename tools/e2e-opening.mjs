@@ -67,7 +67,7 @@ async function page(o = {}) {
     if (o.sub) localStorage.setItem('gal_api2_config', JSON.stringify(o.sub));
     if (o.pe) localStorage.setItem('gal_phone_env', JSON.stringify(o.pe));
   }, o);
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(700);
   await p.setInputFiles('#f-card', path.join(OUT, 'opening-card.json'));
   await p.setInputFiles('#f-preset', path.join(OUT, 'opening-preset.json'));

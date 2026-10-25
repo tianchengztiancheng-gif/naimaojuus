@@ -73,7 +73,7 @@ async function page(net, o = {}) {
   if (o.wait != null) await p.addInitScript((w) => {
     try { if (!localStorage.getItem('gal_imgnet')) localStorage.setItem('gal_imgnet', JSON.stringify({ mode: 'auto', wait: w })); } catch (e) {}
   }, o.wait);
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(400);
   return { ctx, p, hits, errs };
 }

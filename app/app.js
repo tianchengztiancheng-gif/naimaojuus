@@ -1264,7 +1264,7 @@
      往下翻（只是「开始游戏」按钮不亮），因为接口可以最后填。
      ============================================================ */
   var BOOT_STEPS = [
-    { k: 'asset', code: 'ASSET',    t: '素 材', d: '载入角色卡和预设。两个文件都只存在本机浏览器，不会上传。' },
+    { k: 'asset', code: 'ASSET',    t: '素 材', d: 'juus 卡已经内置。在这里导入你的预设（破限），想加的话再挂附加世界书。文件只存在本机浏览器，不会上传。' },
     { k: 'api',   code: 'API',      t: '接 口', d: '填模型接口。地址填根地址就行，/v1 这些会自动补。' },
     { k: 'art',   code: 'ARTWORK',  t: '插 画', d: '可选。开了之后 AI 每轮会产出 1~2 张插画，铺成 CG。' },
     { k: 'go',    code: 'START',    t: '开 场', d: '起个称呼，挑一个开局，就可以进去了。' }
@@ -1325,7 +1325,8 @@
     var g = imgCfg();
     var rows = [
       { ok: !!loaded.card, must: true, t: loaded.card
-          ? '角色卡已载入 · 世界书 ' + eng.pool.length + ' 条' : '还缺角色卡（第 1 步）' },
+          ? (loaded.cardSrc === 'custom' ? '你自己的卡' : '内置 juus 卡') + ' · 世界书 ' + eng.pool.length + ' 条'
+          : '没有角色卡（内置卡没加载上）' },
       { ok: !!loaded.preset, must: false, t: loaded.preset
           ? '预设已载入 · ' + PromptBuilder.parsePreset(eng.preset).order.length + ' 块'
           : '没载入预设 —— 模型多半不会按剧本格式输出' },
@@ -3910,7 +3911,7 @@
     $('save-modal').hidden = false;
     renderSlots();
   }
-  function closeSaves() { $('save-modal').hidden = true; }
+  function closeSaves() { $('save-modal').hidden = true; hbReturn(); }
 
   function nodeVisible(s) {
     if (svTab === 'manual') return s.type === 'manual' && !s.imported;
@@ -4542,7 +4543,52 @@
   /* ============================================================
      素材载入
      ============================================================ */
-  var loaded = { card: false, preset: false };
+  var loaded = { card: false, preset: false, cardSrc: '' };   // cardSrc：'builtin' 内置卡 / 'custom' 玩家自己的卡
+
+  /* v5.30：juus 卡随仓库内置（resource/juus-card.js，由 tools/build-juus-builtin.mjs 生成）。
+     打开就有世界书、立绘、开场，玩家只用导预设（破限）、想加再挂附加世界书。
+     「换用自己的卡」还留着：载了就用玩家的，存进 IndexedDB；「换回内置卡」回来。 */
+  var BUILTIN_CARD = window.JUUS_CARD || null;
+  var cardName = '';
+  var extraBooks = [];   // 附加世界书 [{ name, json, n }]，存 IndexedDB，刷新不丢（v5.29 及以前刷新就没了）
+
+  function isJuusCard(card) {
+    var d = (card && (card.data || card)) || {};
+    return /juus|奶猫崛起/i.test(String(d.name || ''));
+  }
+  /* 载任何卡之前的素材表（预置的 resource/juus/、resource/tianqing/ 静态表）。换卡时先回到它再载新卡 ——
+     CardRes 是往里合并的，不回去的话从内置卡换成自己的卡，内置卡的七十多位舰娘立绘还留着。
+     原地清空再填（不换对象）：别的模块拿着 RESOURCE.characters 这些对象的引用 */
+  var RES_BASE = null;
+  function resetResources() {
+    var R = window.RESOURCE, PR = window.PHONE_RES;
+    if (RES_BASE == null) {
+      RES_BASE = JSON.stringify({ c: (R && R.characters) || {}, d: (R && R.defaults) || {}, s: (R && R.scenes) || {}, p: PR || {} });
+      return;
+    }
+    var b = JSON.parse(RES_BASE);
+    function refill(o, src) { Object.keys(o).forEach(function (k) { delete o[k]; }); Object.assign(o, src); }
+    if (R) {
+      refill(R.characters = R.characters || {}, b.c);
+      refill(R.defaults = R.defaults || {}, b.d);
+      refill(R.scenes = R.scenes || {}, b.s);
+    }
+    if (PR) refill(PR, b.p);
+  }
+  /** 换卡。载卡会把世界书池整个从卡重建，所以附加世界书和预设自带的世界书都要重新挂上 */
+  function applyCard(card, src) {
+    resetResources();
+    eng.loadCard(card);
+    loaded.card = true; loaded.cardSrc = src;
+    eng._wiSeq = 0;      // uid 前缀按存的顺序重新从 wi1: 编，刷新前后一致
+    extraBooks.forEach(function (b) { b.n = eng.addWorldbook(b.json); });
+    if (loaded.preset && eng.preset) eng.loadPreset(eng.preset);
+    fillOpenings(card); syncImageRule();
+  }
+  function saveExtraBooks() {
+    GalStore.putWorldbooks(extraBooks.map(function (b) { return { name: b.name, json: b.json }; }))
+      .catch(function () {});
+  }
 
   /** 宽松解析：Windows 记事本存的 JSON 开头常带 BOM；手改过的预设常留尾逗号；
       从聊天里复制的会包一层 ```json。这些 JSON.parse 都直接报错，玩家只看到「解析失败」。 */
@@ -4597,7 +4643,16 @@
       (eng.userRegex && eng.userRegex.length ? ' <button type="button" class="linkbtn" id="rx-clear">删掉导入的 ' +
         eng.userRegex.length + ' 条正则</button>' : '') +
       (thN ? ' ｜ <span class="dim">酒馆助手脚本 ' + thN + ' 个（JS，不运行）</span>' : '') +
-      (loaded.card ? '' : ' <span class="warn">— 还缺角色卡</span>');
+      (loaded.card ? '' : ' <span class="warn">— 没有角色卡（内置卡没加载上，检查 resource/juus-card.js）</span>');
+    /* 卡是哪来的、挂了哪些附加世界书 */
+    var src = loaded.cardSrc === 'builtin' ? '用的是<b>内置 juus 卡</b>'
+      : loaded.cardSrc === 'custom' ? '用的是你自己的卡' + (cardName ? '「' + esc(cardName) + '」' : '') +
+        (BUILTIN_CARD ? ' <button type="button" class="linkbtn" id="card-builtin">换回内置卡</button>' : '')
+      : '';
+    if (src) html = src + ' ｜ ' + html;
+    if (extraBooks.length) html += '<br>附加世界书：' + extraBooks.map(function (b, i) {
+      return esc(b.name) + '（' + (b.n || 0) + ' 条） <button type="button" class="linkbtn" data-wb-del="' + i + '">删掉</button>';
+    }).join(' ｜ ');
     /* 从卡里抽出来多少立绘 —— 这是用户最关心的一件事（"我的图呢"），
        载完卡就该直接看见数字，而不是等进了游戏发现舞台是空的。 */
     if (loaded.card) {
@@ -4617,6 +4672,26 @@
       }
     }
     $('assets-note').innerHTML = html;
+    if ($('card-builtin')) $('card-builtin').onclick = function () {
+      if (!BUILTIN_CARD) return;
+      GalStore.delCard().catch(function () {});
+      cardName = '';
+      applyCard(BUILTIN_CARD, 'builtin');
+      $('f-card').value = ''; $('f-card').parentNode.classList.remove('ok');
+      noteAssets();
+      toast('换回内置 juus 卡了', 'ok', 2500);
+    };
+    PA2('#assets-note [data-wb-del]').forEach(function (b) {
+      b.onclick = function () {
+        var i = +b.getAttribute('data-wb-del');
+        var gone = extraBooks.splice(i, 1)[0];
+        saveExtraBooks();
+        if (eng.card) applyCard(eng.card, loaded.cardSrc);   // 池从卡重建，剩下的附加世界书重新挂
+        if (!extraBooks.length) { $('f-wi').value = ''; $('f-wi').parentNode.classList.remove('ok'); }
+        noteAssets();
+        if (gone) toast('删掉了附加世界书「' + gone.name + '」', 'ok', 2500);
+      };
+    });
     if ($('rx-clear')) $('rx-clear').onclick = function () {
       if (!confirm('删掉全部单独导入的正则（' + eng.userRegex.length + ' 条）？预设和卡自带的不受影响。')) return;
       toast('已删掉 ' + deleteUserRegex(null) + ' 条导入的正则', 'ok', 3000);
@@ -4658,7 +4733,9 @@
     /* 卡自带的 + 仓库修订包加的（resource/*-patch.js，排在后面），编号连着往下 */
     var more = (d.alternate_greetings || []).map(function (g) { return { t: g }; })
       .concat(window.CardPatch ? CardPatch.openings(card) : []);
-    var list = [].concat(d.first_mes ? [{ n: '默认开场', t: d.first_mes }] : [],
+    /* 酒馆版 v4 卡的首条开场白是标题画面（<Harbor>…</Harbor>，酒馆里靠正则画出来），这里自己有港区，跳过它 */
+    var first = /^\s*<Harbor>[\s\S]*<\/Harbor>\s*$/.test(d.first_mes || '') ? '' : d.first_mes;
+    var list = [].concat(first ? [{ n: '默认开场', t: first }] : [],
       more.map(function (o, i) { return Object.assign({}, o, { n: openingLabel(o.t, i, o.n) }); }));
     $('opening-sel').innerHTML = list.map(function (o, i) {
       return '<option value="' + i + '">' + esc(o.n) + '</option>';
@@ -4666,14 +4743,20 @@
     $('opening-sel')._list = list;
   }
   readJSON($('f-card'), function (j, name) {
-    eng.loadCard(j); loaded.card = true; fillOpenings(j); syncImageRule();
+    cardName = name || '';
+    applyCard(j, 'custom');
     GalStore.putCard(j, name).catch(function () {}); noteAssets();
   });
   readJSON($('f-preset'), function (j, name) {
     eng.loadPreset(j); loaded.preset = true; presetName = name || '';
     GalStore.putPreset(j, name).catch(function () {}); noteAssets();
   });
-  readJSON($('f-wi'), function (j) { eng.addWorldbook(j); noteAssets(); });
+  readJSON($('f-wi'), function (j, name) {
+    var n = eng.addWorldbook(j);
+    extraBooks.push({ name: String(name || '附加世界书').replace(/\.json$/i, ''), json: j, n: n });
+    saveExtraBooks(); noteAssets();
+    $('f-wi').value = '';     // 同一个文件删掉后还能再选
+  });
 
   /* 单独导入的正则：可多选，追加进已有的；存 localStorage（正则都很短） */
   function loadUserRegex() {
@@ -4732,6 +4815,7 @@
      开始 / 继续
      ============================================================ */
   function enterGame() {
+    hideHarbor(); HB.back = false; document.body.classList.remove('hb-aside');
     $('boot').classList.add('gone');
     ['dialogue', 'inputbar', 'toolbar'].forEach(function (id) { $(id).hidden = false; });
   }
@@ -4755,6 +4839,7 @@
     stageNow = []; lastBgUrl = null;
     $('boot').classList.remove('gone');
     await renderRuns();
+    showHarbor();       // 退出游戏回到港区（标题画面）
   }
 
   /** 开场引导左栏的周目列表 */
@@ -4772,6 +4857,7 @@
 
     var box = $('boot-runs'), body = $('boot-runs-body');
     if (!box || !body) return list;
+    hbRuns(list);
     if (!list.length) { box.hidden = true; $('btn-continue').hidden = true; return list; }
 
     box.hidden = false;
@@ -5790,7 +5876,7 @@
     $('sg-modal').hidden = false;
     renderGallery();
   }
-  function closeGallery() { sgReset(); sgFree(); $('sg-modal').hidden = true; $('sg-view').hidden = true; }
+  function closeGallery() { sgReset(); sgFree(); $('sg-modal').hidden = true; $('sg-view').hidden = true; hbReturn(); }
   /** 关大图：大图看着的时候格子不开新请求（带宽让给大图），关了接着拉 */
   function sgCloseView() { $('sg-view').hidden = true; sgPump(); }
   function renderGallery() {
@@ -6052,6 +6138,120 @@
   window.addEventListener('resize', function () { layout(); refreshDlgHeight(); });
   bindBoot();
 
+  /* ============================================================
+     标题画面「港区」（v5.30）
+     碧蓝航线港区主界面的版式：满幅立绘，顶上指挥官信息栏，右下「出击」+ 舰务栏，左下秘书舰对话框。
+     它盖在开场引导上面（z 61）。出击 → 开场引导（东西齐了直接跳到「开场」那步）；继续 → 续最近的存档；
+     存档 / 图鉴 → 先让开，弹窗关了再回来；设置 → 开场引导第一步。进游戏就收起，退出游戏回到这里。
+     内容（背景、标题、台词）在 resource/juus-title.js；没有那个文件或网址带 ?title=0 就不出现。
+     ============================================================ */
+  var HB = { on: false, back: false, lines: [], li: 0, timer: 0, clock: 0 };
+  var HB_CFG = window.GAL_TITLE || null;
+  var HB_ON = !!(HB_CFG && $('harbor')) && !/[?&]title=0\b/.test(location.search);
+
+  function hbText(id, t) { var e = $(id); if (e) e.textContent = t; }
+  function hbTick() {
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    hbText('hb-clock', p(d.getHours()) + ':' + p(d.getMinutes()));
+    hbText('hb-date', p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' · 晴');
+  }
+  /** 秘书舰换一句。深夜（0~5 点）第一句挑标了 night 的 */
+  function hbLine(next) {
+    var L = HB.lines; if (!L.length) { $('hb-sec').hidden = true; return; }
+    if (next) HB.li = (HB.li + 1) % L.length;
+    var box = $('hb-sec'), l = L[HB.li];
+    box.classList.add('swap');
+    setTimeout(function () {
+      hbText('hb-sec-name', l.who || '秘书舰');
+      hbText('hb-sec-line', l.t || '');
+      box.classList.remove('swap');
+    }, next ? 220 : 0);
+  }
+  function hbSchedule() {
+    clearInterval(HB.timer);
+    HB.timer = setInterval(function () { if (HB.on && !document.hidden) hbLine(true); }, 9000);
+  }
+  /** 存档概况：舰务栏「继续」亮不亮、上面那行说明、顶栏的副标题。renderRuns() 每次都会调 */
+  function hbRuns(list) {
+    if (!HB_ON) return;
+    var has = !!(list && list.length);
+    $('hb-continue').disabled = !has;
+    var r = $('hb-resume');
+    if (has) {
+      var s = list[0];
+      r.hidden = false;
+      r.innerHTML = '继续：<b>' + esc(s.opening || '未命名开局') + '</b> · ' + esc(s.title || '') + ' · 第 ' +
+        (s.round != null ? s.round : s.turns) + ' 轮';
+      var at = new Date(s.at || Date.now());
+      hbText('hb-sub', '存档 ' + list.length + ' 份 · 上次出击 ' + at.getFullYear() + '/' + (at.getMonth() + 1) + '/' + at.getDate());
+    } else {
+      r.hidden = true;
+      hbText('hb-sub', '港区待命中 · 还没有存档');
+    }
+  }
+  function showHarbor() {
+    if (!HB_ON) return;
+    HB.on = true; HB.back = false;
+    var per = (window.Editors && Editors.loadPersona && Editors.loadPersona()) || {};
+    hbText('hb-name', String(per.name || '').trim() || '指挥官');
+    $('hb-gallery').hidden = !(SG_ON && sgChars().length);
+    hbTick(); clearInterval(HB.clock); HB.clock = setInterval(hbTick, 20000);
+    $('harbor').hidden = false;
+    $('boot-home').hidden = false;
+    hbSchedule();
+  }
+  function hideHarbor() {
+    if (!HB_ON) return;
+    HB.on = false;
+    $('harbor').hidden = true;
+    clearInterval(HB.timer); clearInterval(HB.clock);
+  }
+  /** 存档 / 图鉴：先让开，弹窗关了再回来。存档弹窗（z 60）原本排在开场引导（也是 60、DOM 在后）下面，
+      从港区打开时整体提到引导上面（body.hb-aside，见 harbor.css） */
+  function hbAside(open) { hideHarbor(); HB.back = true; document.body.classList.add('hb-aside'); open(); }
+  function hbReturn() {
+    document.body.classList.remove('hb-aside');
+    if (HB_ON && HB.back) { HB.back = false; showHarbor(); }
+  }
+
+  function initHarbor() {
+    if (!HB_ON) { if ($('harbor')) $('harbor').hidden = true; return; }
+    var C = HB_CFG;
+    hbText('hb-title', C.title || 'Gal 引擎');
+    hbText('hb-en', C.en || '');
+    hbText('hb-kicker', C.kicker || 'HARBOR');
+    hbText('hb-ver', 'v' + (APP_VER || '?'));
+    document.title = (C.title || document.title);
+    HB.lines = (C.lines || []).filter(function (l) { return l && l.t; });
+    var h = new Date().getHours();
+    var night = HB.lines.findIndex(function (l) { return l.night; });
+    HB.li = (h < 5 && night >= 0) ? night : Math.floor(Math.random() * Math.max(1, HB.lines.length));
+    hbLine(false);
+    var bg = $('hb-bg');
+    if (C.focus) bg.style.setProperty('--hb-focus', C.focus);
+    /* 背景图走 ImgNet：直连不通换中转；拉不到就留着 CSS 画的海港夜色 */
+    if (C.bg) ImgNet.load(C.bg).then(function (src) {
+      if (!src) { noteImgFail('标题背景', C.bg); return; }
+      bg.style.backgroundImage = 'url("' + src + '")';
+      bg.classList.add('on');
+    });
+
+    $('hb-start').onclick = function () {
+      hideHarbor();
+      /* 东西齐了直接到「开场」那步挑开局；缺预设回第一步；缺接口去第二步 */
+      var go = BOOT_STEPS.length - 1;
+      gotoBoot(!loaded.preset ? 0 : (!bootDone('api') ? 1 : go));
+    };
+    $('hb-continue').onclick = function () { if (!this.disabled) { hideHarbor(); $('btn-continue').click(); } };
+    $('hb-saves').onclick = function () { hbAside(openSaves); };
+    $('hb-gallery').onclick = function () { hbAside(openGallery); };
+    $('hb-settings').onclick = function () { hideHarbor(); gotoBoot(0); };
+    $('hb-sec').onclick = function () { hbLine(true); hbSchedule(); };
+    $('hb-sec').onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.click(); } };
+    $('boot-home').onclick = function () { showHarbor(); };
+    showHarbor();
+  }
+
   /* 调试钩子：浏览器控制台里可以 __gal.eng.vars / __gal.eng.pool 看内部状态，
      冒烟测试也靠它注入角色卡。 */
   window.__gal = {
@@ -6079,7 +6279,12 @@
     memoryNow: function () { return memoryAfterTurn(true); },
     openApp: function (k) { return openApp(k); },
     setDevice: setDevice, setOrient: setOrient, setTbHidden: setTbHidden,
-    stageFor: stageFor, phoneBack: phoneBack
+    stageFor: stageFor, phoneBack: phoneBack,
+    /* 载任何卡之前的素材表（v5.30：开局就载了内置卡，端到端测试要拿它当「载卡前」的基线） */
+    resBase: function () { return RES_BASE == null ? null : JSON.parse(RES_BASE); },
+    harbor: function () { return { on: HB.on, enabled: HB_ON }; }, showHarbor: showHarbor, hideHarbor: hideHarbor,
+    extraBooks: function () { return extraBooks.map(function (b) { return { name: b.name, n: b.n }; }); },
+    cardSrc: function () { return loaded.cardSrc; }
   };
 
   /* 恢复上次的素材与配置 */
@@ -6088,12 +6293,26 @@
   loadSubToForm();
   bindOpc();
   loadUserRegex();
-  Promise.all([GalStore.getCard(), GalStore.getPreset(), GalStore.loadSlot('auto')])
+  initHarbor();
+  /* 内置卡先装上 —— IndexedDB 读不出来（隐私模式等）也照样能玩；下面读到玩家自己的卡再换 */
+  if (BUILTIN_CARD) applyCard(BUILTIN_CARD, 'builtin');
+  Promise.all([GalStore.getCard(), GalStore.getPreset(), GalStore.loadSlot('auto'), GalStore.getWorldbooks()])
     .then(function (r) {
-      if (r[0] && r[0].json) {
-        eng.loadCard(r[0].json); loaded.card = true; fillOpenings(r[0].json); syncImageRule();
+      extraBooks = (Array.isArray(r[3]) ? r[3] : []).filter(function (b) { return b && b.json; })
+        .map(function (b) { return { name: b.name || '附加世界书', json: b.json, n: 0 }; });
+      var saved = r[0] && r[0].json;
+      /* v5.29 及以前玩家自己载的 juus 卡（没有 custom 标记）：内置卡比它新，换成内置的，旧的删掉省空间。
+         别的卡照旧用 */
+      var legacyJuus = saved && !r[0].custom && isJuusCard(saved) && BUILTIN_CARD;
+      if (legacyJuus) GalStore.delCard().catch(function () {});
+      if (saved && !legacyJuus) {
+        cardName = r[0].name || '';
+        applyCard(saved, 'custom');
         $('f-card').parentNode.classList.add('ok');
+      } else if (BUILTIN_CARD && extraBooks.length) {
+        applyCard(BUILTIN_CARD, 'builtin');     // 把附加世界书挂上
       }
+      if (extraBooks.length) $('f-wi').parentNode.classList.add('ok');
       if (r[1] && r[1].json) {
         eng.loadPreset(r[1].json); loaded.preset = true; presetName = r[1].name || '';
         $('f-preset').parentNode.classList.add('ok');

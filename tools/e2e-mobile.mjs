@@ -97,7 +97,7 @@ for (const v of VIEWS) {
   const ctx = await newCtx({ viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(600);
   const cls = await p.evaluate(() => document.documentElement.className);
   ok('自动识别成手机，' + (v.orient === 'm-port' ? '竖屏' : '横屏'), /m-mobile/.test(cls) && cls.includes(v.orient), cls);
@@ -205,7 +205,7 @@ console.log('\n[转屏：竖 → 横 → 竖]');
 {
   const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(500);
   await start(p);
   await goLine(p, 3);
@@ -224,7 +224,7 @@ console.log('\n[电脑模式不受影响 + 手动切换]');
 {
   const ctx = await newCtx({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(500);
   ok('电脑自动识别成电脑', await p.evaluate(() => document.documentElement.classList.contains('m-pc')));
   await start(p);
@@ -247,7 +247,7 @@ console.log('\n[电脑模式不受影响 + 手动切换]');
   /* 手机上也能手动切回电脑版（有人就是想要电脑版的样子） */
   const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(400);
   await p.click('#boot .boot-device [data-dev="pc"]');
   await p.waitForTimeout(300);
@@ -265,7 +265,7 @@ console.log('\n[手动横竖屏：手机转不过来也能横屏]');
   const ctx = await newCtx({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(500);
   const os = await probe(p, '#boot .orient-seg [data-orient="land"]');
   ok('开场引导里有「横竖屏」选择，看得见', os.inView && os.onTop, JSON.stringify(os));
@@ -335,7 +335,7 @@ console.log('\n[手动横竖屏：手机转不过来也能横屏]');
   /* 反过来：手机横着卡住了，想竖屏玩 */
   const ctx = await newCtx({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(400);
   await start(p);
   await goLine(p, 3);
@@ -357,7 +357,7 @@ for (const v of [{ name: '手机竖屏', w: 360, h: 640, mob: true }, { name: '�
   const ctx = await newCtx(v.mob ? { viewport: { width: v.w, height: v.h }, isMobile: true, hasTouch: true }
     : { viewport: { width: v.w, height: v.h } });
   const p = await ctx.newPage();
-  await p.goto('file://' + ROOT + '/index.html');
+  await p.goto('file://' + ROOT + '/index.html?title=0');
   await p.waitForTimeout(400);
   await start(p);
   const all = await p.evaluate(() => [...document.querySelectorAll('#toolbar button')].filter(x => x.offsetWidth).map(x => {

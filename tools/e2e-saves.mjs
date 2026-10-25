@@ -58,7 +58,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
 const errs = [];
 p.on('pageerror', e => errs.push(String(e).slice(0, 160)));
-await p.goto('file://' + ROOT + '/index.html');
+await p.goto('file://' + ROOT + '/index.html?title=0');
 await p.waitForTimeout(900);
 
 await p.setInputFiles('#f-card', path.join(OUT, 'saves-card.json'));

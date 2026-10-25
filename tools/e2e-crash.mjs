@@ -13,7 +13,7 @@ import { chromium } from 'playwright';
 const OUT=process.argv[2] || '.';
 const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
 const p=await b.newPage({viewport:{width:1280,height:860}});
-await p.goto('file://'+process.cwd()+'/index.html');
+await p.goto('file://'+process.cwd()+'/index.html?title=0');
 await p.waitForTimeout(900);
 let pass=0,fail=0;
 const ok=(n,c,x)=>c?(pass++,console.log('  ✓ '+n)):(fail++,console.log('  ✗ '+n+(x?'\n      → '+x:'')));

@@ -68,7 +68,7 @@ await p.addInitScript(() => {
     protocol: 'openai', baseUrl: 'https://fake.api', apiKey: 'k', model: 'm', stream: false, maxTokens: 4096 }));
 });
 
-await p.goto('file://' + ROOT + '/index.html');
+await p.goto('file://' + ROOT + '/index.html?title=0');
 await p.waitForTimeout(900);
 await p.setInputFiles('#f-card', path.join(OUT, 'reroll-card.json'));
 await p.waitForTimeout(500);

@@ -61,7 +61,7 @@ const errs = []; p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 /* 图库 v5.28.6 下线过、v5.29 重新上线：?gallery=0 才藏起来 */
 await p.goto('file://' + ROOT + '/index.html?title=0&gallery=0'); await p.waitForTimeout(700);
 const sgOff = await p.evaluate(() => ['btn-gallery', 'cg-sg', 'boot-gallery'].map(id => { const e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; }));
-await p.goto('file://' + ROOT + '/index.html'); await p.waitForTimeout(900);
+await p.goto('file://' + ROOT + '/index.html?title=0'); await p.waitForTimeout(900);
 const E = (f, a) => p.evaluate(f, a);
 
 console.log('\n[A 修订包]');
@@ -81,8 +81,9 @@ const a = await E(() => {
     wbJa: pool.filter(e => e.comment === '雅努斯差分').map(e => e.content), balEntry: pool.filter(e => e.comment === '巴尔的摩差分').map(e => e.enabled),
     note: document.getElementById('assets-note').textContent, ops: [...document.getElementById('opening-sel').options].map(x => x.textContent) };
 });
-ok('贾维斯：73 张新立绘', a.jv === 73, a.jv);
-ok('雅努斯：整套换成新的 68 张（旧的「不安」没了）', a.ja === 68 && !a.jaExprs.includes('不安') && a.jaExprs.includes('猫耳卖萌'), a.ja + ' ' + a.jaExprs.slice(0, 5));
+/* v5.30：resource/juus-extra.js 再给两人各补 2 张「掀起裙子诱惑」 */
+ok('贾维斯：73 张新立绘 + 2 张掀起裙子诱惑', a.jv === 75, a.jv);
+ok('雅努斯：整套换成新的 68 张 + 2 张掀起裙子诱惑（旧的「不安」没了）', a.ja === 70 && !a.jaExprs.includes('不安') && a.jaExprs.includes('猫耳卖萌') && a.jaExprs.includes('掀起裙子诱惑'), a.ja + ' ' + a.jaExprs.slice(0, 5));
 ok('巴尔的摩 / 布莱默顿 / 武藏 / 威尔士的差分删了', a.gone.every(x => !x));
 ok('巴尔的摩的默认立绘还在（之后用它）', a.balt);
 ok('威尔士的默认立绘留着（链接是好的）', a.wales);
@@ -95,7 +96,8 @@ ok('世界书：贾维斯设定（长条目）+ 贾维斯差分', a.wbJ.length =
 ok('世界书：雅努斯差分换成新表情（同名只留一条）', a.wbJa.length === 1 && /猫耳卖萌/.test(a.wbJa[0]) && !/不安/.test(a.wbJa[0]));
 ok('世界书：删了差分的条目关掉', a.balEntry.length === 1 && a.balEntry[0] === false);
 ok('引导页写着打了修订包', /修订包/.test(a.note), a.note.slice(-120));
-ok('开场列表最后多了修订包的开局，名字是「在场的人 · 地点」，不写好感', a.ops.length === 4 && a.ops[3] === '3. 贾维斯、雅努斯 · 医院病房', a.ops.join(' / '));
+ok('开场列表最后多了修订包的开局，名字是「在场的人 · 地点」，不写好感', a.ops.length === 6 && a.ops[3] === '3. 贾维斯、雅努斯 · 医院病房', a.ops.join(' / '));
+ok('再往后是初月、弗兰德尔的新开局（v5.30.1）', a.ops[4] === '4. 初月 · 重樱入港处' && a.ops[5] === '5. 弗兰德尔 · 指挥官办公室', a.ops.join(' / '));
 ok('卡自带的开场也按「在场的人 · 地点」起名；没人说话的退回抬头', a.ops[2] === '2. 谢菲尔德、柴郡 · 港区' && /^1\. 09:00 · 港区/.test(a.ops[1]) && a.ops[0] === '默认开场', a.ops.join(' / '));
 
 console.log('\n[B 新开场]');

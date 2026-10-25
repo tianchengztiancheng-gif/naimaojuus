@@ -76,7 +76,7 @@ await p.addInitScript(() => {
   localStorage.setItem('gal_memory_cfg', JSON.stringify({ enabled: false }));
 });
 async function boot() {
-  await p.goto('file://' + ROOT + '/index.html'); await p.waitForTimeout(700);
+  await p.goto('file://' + ROOT + '/index.html?title=0'); await p.waitForTimeout(700);
   await p.setInputFiles('#f-card', path.join(OUT, 'custom-card.json'));
   await p.setInputFiles('#f-preset', path.join(OUT, 'custom-preset.json'));
   await p.waitForTimeout(400);

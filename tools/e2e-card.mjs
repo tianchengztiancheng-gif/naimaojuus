@@ -57,15 +57,21 @@ fs.writeFileSync(OUT + '/synthetic-card.json', JSON.stringify(card));
 const b = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium' });
 const p = await b.newPage({ viewport:{width:1280,height:800} });
 const errs=[]; p.on('pageerror', e=>errs.push(String(e).slice(0,160)));
-await p.goto('file://' + ROOT + '/index.html');
+await p.goto('file://' + ROOT + '/index.html?title=0');
 await p.waitForTimeout(1000);
 
-const before = await p.evaluate(()=>({
+/* v5.30 起页面一打开就载了内置 juus 卡，「载卡前」改看载任何卡之前的素材表（预置素材包）；
+   换成自己的卡时引擎先回到这份基线再载，所以增量照样是卡里那几个 */
+const before = await p.evaluate(()=>{
+  const b = window.__gal.resBase && window.__gal.resBase();
+  if (b) return { chars: Object.keys(b.c).length, defs: Object.keys(b.d).length, locs: Object.keys(b.s).length,
+                  avatars: Object.keys((b.p||{}).avatars||{}).length };
+  return {
   chars: Object.keys(window.RESOURCE.characters).length,
   defs:  Object.keys(window.RESOURCE.defaults).length,
   locs:  Object.keys(window.RESOURCE.scenes).length,
   avatars: Object.keys((window.PHONE_RES||{}).avatars||{}).length,
-}));
+}; });
 const CLEAN = before.chars === 0;
 console.log('\n[1] 载卡前' + (CLEAN ? '（干净：没装素材包，这是要重点验的情形）'
                                       : '（本地装了素材包，改看增量）'));

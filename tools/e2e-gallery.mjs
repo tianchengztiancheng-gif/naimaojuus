@@ -57,7 +57,7 @@ const errs = [];
 async function page(q) {
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-  await p.goto('file://' + ROOT + '/index.html' + (q || '')); await p.waitForTimeout(800);
+  await p.goto('file://' + ROOT + '/index.html?title=0' + (q ? '&' + q.replace(/^\?/, '') : '')); await p.waitForTimeout(800);
   return p;
 }
 const shown = (p, id) => p.evaluate(id => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; }, id);
