@@ -1324,6 +1324,11 @@ node tools/smoke-test.js            # [7b] 测试连接拉模型、[7c] 预设�
 - 酒馆版那边：`tools/upgrade-juus-v4.mjs`（换世界书、写立绘表、差分条目、追加开局、装标题画面）→ `tools/build-tavern.mjs`（装 gal 前端和小手机），
   测试 `tools/e2e-tavern-harbor.mjs`（53）。详见酒馆版 `tavern/README.md` 的 v4 一节。
 
+- **v5.30.2 · 明石**：`juus-extra.js` 加了 `REPLACE`（走 CardPatch 的 `sprites`，整套替换）：维护者 11/01 给的 35 种 + 卡里原有、新图没有的 4 种（担心 / 开心 / 坏笑 / 性高潮），
+  重名的 3 种只用新图。链接在维护者的网络下逐个 fetch 过（35 张都是 832×1216 RGBA，透明背景占三到四成）。
+  世界书：`juus世界书-2026-11-01.json`（在酒馆版目录）= 10/25 那本 + 「明石」设定一条（uid 170，设置照「初月」），`build-juus-builtin --worldbook` 重新生成 juus-card.js，
+  只多这一条、别的逐字段没变（生成时核对过）。酒馆版 `upgrade-juus-v4.mjs` 也认 `sprites` 了（整套替换），出 v4.1。
+
 ## 八、当前数据一览
 
 - 表情差分：**74 角色 / 3594 张**（juus 73 + 天青 1）

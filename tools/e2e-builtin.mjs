@@ -59,10 +59,10 @@ const state = () => E(() => {
 console.log('\n[A 干净打开]');
 let s = await state();
 ok('没载卡就用上了内置 juus 卡', s.src === 'builtin' && /奶猫崛起/.test(s.name), J([s.src, s.name]));
-/* 池 = 卡里 140 条 + 初月 / 弗兰德尔新建的两条差分 + 引擎自己的 3 条规则（手机 / 出入场 / 插画） */
+/* 池 = 卡里 141 条（v5.30.2 加了明石的设定） + 初月 / 弗兰德尔新建的两条差分 + 引擎自己的 3 条规则（手机 / 出入场 / 插画） */
 const BASE = s.pool;
 const kinds = await E(() => { const P = window.__gal.eng.pool; return { card: P.filter(e => /^\d+$/.test(String(e.uid))).length, diff: P.filter(e => /^patch:juus-extra:/.test(e.uid)).length, eng: P.filter(e => /^__engine_/.test(e.uid)).length }; });
-ok('世界书：卡里 140 条 + 新建差分 2 条 + 引擎规则 3 条', kinds.card === 140 && kinds.diff === 2 && kinds.eng === 3 && BASE === 145, J([kinds, BASE]));
+ok('世界书：卡里 141 条 + 新建差分 2 条 + 引擎规则 3 条', kinds.card === 141 && kinds.diff === 2 && kinds.eng === 3 && BASE === 146, J([kinds, BASE]));
 ok('素材这一步算完成，开始按钮可点', s.assetDone && s.start);
 ok('引导页写明用的是内置卡，不再提示缺卡', /内置 juus 卡/.test(s.note) && !/还缺角色卡/.test(s.note), s.note.slice(0, 120));
 ok('开场白：默认 + 8 个 + 新加的初月、弗兰德尔，医务室那个只有一个', s.ops.length === 11 && s.ops.filter(o => /贾维斯/.test(o) && /雅努斯/.test(o)).length === 1, J(s.ops));
@@ -73,25 +73,29 @@ const labels = await E(() => [...document.querySelectorAll('#boot .files label')
 ok('文件框：预设在前，角色卡变成「换用自己的角色卡（可选）」放最后', /^预设/.test(labels[0]) && /换用自己的角色卡（可选）/.test(labels[labels.length - 1]), J(labels));
 await p.screenshot({ path: OUT + '/builtin-boot.png' });
 
-console.log('\n[B 四个人能被触发]');
+console.log('\n[B 五个人能被触发（初月 / 弗兰德尔 / 贾维斯 / 雅努斯 / 明石）]');
 const trig = await E(() => {
   const eng = window.__gal.eng;
   const fired = t => Worldbook.activate(eng.pool, [{ role: 'user', content: t }], { rng: () => 0 }).active.map(e => e.comment);
-  const out = eng.processOutput('<Gal>\n『✨ 2081/06/20 · 14:20 · 医院病房 · 天气:晴 ✨』|旁白|-|\n「指挥官～」|初月|小恶魔笑容|\n「……打扫完了。」|弗兰德尔|胜利|\n「真是的。」|贾维斯|掀起裙子诱惑|\n「诶……」|雅努斯|掀起裙子诱惑|\n</Gal>');
+  const out = eng.processOutput('<Gal>\n『✨ 2081/06/20 · 14:20 · 医院病房 · 天气:晴 ✨』|旁白|-|\n「指挥官～」|初月|小恶魔笑容|\n「……打扫完了。」|弗兰德尔|胜利|\n「真是的。」|贾维斯|掀起裙子诱惑|\n「诶……」|雅努斯|掀起裙子诱惑|\n「谢谢惠顾喵♪」|明石|赚到钱了或谢谢惠顾|\n</Gal>');
   const R = window.RESOURCE.characters;
   const want = (w, ex) => R[w].outfits['常服'][ex];
   const got = out.modules.filter(m => m.sprites && m.sprites.length).map(m => {
     const sp = m.sprites.find(x => x.who === m.who) || {};
     return { who: m.who, expr: sp.expr, url: sp.url };
   });
-  return { cy: fired('今天初月来了'), fl: fired('弗兰德尔在打扫'), jv: fired('贾维斯'), ja: fired('雅努斯'),
+  return { cy: fired('今天初月来了'), fl: fired('弗兰德尔在打扫'), jv: fired('贾维斯'), ja: fired('雅努斯'), ak: fired('去明石的商店'),
+    akDiff: (eng.pool.find(e => e.comment === '明石差分') || {}).content || '', akN: Object.values(R['明石'].outfits).reduce((n, o) => n + Object.keys(o).length, 0),
     got, okUrls: got.map(g => (want(g.who, g.expr) || []).indexOf(g.url) >= 0) };
 });
 ok('提到初月：「初月」设定 +「初月差分」亮', trig.cy.includes('初月') && trig.cy.includes('初月差分'), J(trig.cy));
 ok('提到弗兰德尔：「弗兰德尔」设定 +「弗兰德尔差分」亮', trig.fl.includes('弗兰德尔') && trig.fl.includes('弗兰德尔差分'), J(trig.fl));
 ok('提到贾维斯 / 雅努斯：设定和差分都亮', ['贾维斯', '贾维斯差分'].every(c => trig.jv.includes(c)) && ['雅努斯', '雅努斯差分'].every(c => trig.ja.includes(c)), J([trig.jv, trig.ja]));
-ok('剧本里四个人的表情都点到自己那张图', trig.got.length === 4 && trig.okUrls.every(Boolean) &&
-   J(trig.got.map(g => g.who + '|' + g.expr)) === J(['初月|小恶魔笑容', '弗兰德尔|胜利', '贾维斯|掀起裙子诱惑', '雅努斯|掀起裙子诱惑']), J(trig.got));
+ok('提到明石：新加的「明石」设定 +「明石差分」亮', trig.ak.includes('明石') && trig.ak.includes('明石差分'), J(trig.ak));
+ok('明石：39 种表情（新 35 + 原来留下的 4），差分条目跟着换了', trig.akN === 39 && /赚到钱了或谢谢惠顾/.test(trig.akDiff) && /性高潮/.test(trig.akDiff) && (trig.akDiff.match(/^    - /gm) || []).length === 39, trig.akN + ' / ' + trig.akDiff.slice(0, 80));
+ok('剧本里五个人的表情都点到自己那张图', trig.got.length === 5 && trig.okUrls.every(Boolean) &&
+   J(trig.got.map(g => g.who + '|' + g.expr)) === J(['初月|小恶魔笑容', '弗兰德尔|胜利', '贾维斯|掀起裙子诱惑', '雅努斯|掀起裙子诱惑', '明石|赚到钱了或谢谢惠顾']), J(trig.got));
+ok('明石那句点到的是新图', /q9uoy9/.test((trig.got[4] || {}).url || ''), J(trig.got[4]));
 
 console.log('\n[C 附加世界书]');
 await p.setInputFiles('#f-wi', OUT + '/builtin-wb.json'); await p.waitForTimeout(500);

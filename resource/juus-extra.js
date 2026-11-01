@@ -6,6 +6,7 @@
  *   - 弗兰德尔：36 种表情 / 65 张（透明背景），同上
  *     （第一次上传有 23 张是猫箱空文件，10/25 重传后补齐；新链接在维护者自己的网络下逐个确认过）
  *   - 贾维斯、雅努斯：各补一个「掀起裙子诱惑」（2 张，透明背景）。用的是 add，原来的表情不动
+ *   - 明石：整套换成新的 35 种（+ 卡里原有、新图没有的 4 种），用的是 sprites（整套替换），见下面 REPLACE
  *   - 开局：初月、弗兰德尔各一个（另一个补丁 juus-openings，卡里已经有了就不加）
  *   - diffEntries：按最终的立绘表重写这四人的「X差分」世界书条目（没有就新建），
  *     AI 只会挑差分条目里列出来的表情，名单跟着图走才触发得到
@@ -310,6 +311,132 @@
    }
   };
 
+  /* 整套换掉（v5.30.2）：明石。维护者 11/01 给的 35 种（透明背景，832×1216，在维护者的网络下逐个确认过不是空文件），
+     卡里原来那 7 种里新图没有的 4 种（担心 / 开心 / 坏笑 / 性高潮）留着；重名的 3 种（害羞 / 惊讶 / 疑惑）只用新图，免得一个表情两种画风 */
+  var REPLACE = {
+   "明石": {
+    "常服": {
+     "俏皮": [
+      "https://files.catbox.moe/xiuueb.png"
+     ],
+     "暧昧地打量": [
+      "https://files.catbox.moe/jrc54y.png"
+     ],
+     "比心": [
+      "https://files.catbox.moe/apog2k.png"
+     ],
+     "比耶": [
+      "https://files.catbox.moe/uzl5nq.png"
+     ],
+     "不满": [
+      "https://files.catbox.moe/cqi2rv.png"
+     ],
+     "沉醉": [
+      "https://files.catbox.moe/tyohot.png"
+     ],
+     "吃醋": [
+      "https://files.catbox.moe/rdy7k2.png"
+     ],
+     "雌小鬼笑容": [
+      "https://files.catbox.moe/oow8z6.png"
+     ],
+     "嘟嘴": [
+      "https://files.catbox.moe/2zddl0.png"
+     ],
+     "飞吻": [
+      "https://files.catbox.moe/zshgdv.png"
+     ],
+     "非常生气": [
+      "https://files.catbox.moe/oagvbw.png"
+     ],
+     "刚睡醒或困倦": [
+      "https://files.catbox.moe/qcxeor.png"
+     ],
+     "害羞": [
+      "https://files.catbox.moe/26pcmp.png"
+     ],
+     "红温": [
+      "https://files.catbox.moe/s12le3.png"
+     ],
+     "惊讶": [
+      "https://files.catbox.moe/jak04f.png"
+     ],
+     "警觉或察觉": [
+      "https://files.catbox.moe/71ppdz.png"
+     ],
+     "窘迫": [
+      "https://files.catbox.moe/jh8dql.png"
+     ],
+     "流泪": [
+      "https://files.catbox.moe/h1fi7w.png"
+     ],
+     "卖萌": [
+      "https://files.catbox.moe/zz3y5v.png"
+     ],
+     "祈祷": [
+      "https://files.catbox.moe/2s7oc9.png"
+     ],
+     "心虚": [
+      "https://files.catbox.moe/t35n29.png"
+     ],
+     "星星眼": [
+      "https://files.catbox.moe/rmb6if.png"
+     ],
+     "疑惑": [
+      "https://files.catbox.moe/hcoq8l.png"
+     ],
+     "诱惑": [
+      "https://files.catbox.moe/avs9px.png"
+     ],
+     "赚到钱了或谢谢惠顾": [
+      "https://files.catbox.moe/q9uoy9.png"
+     ],
+     "自信": [
+      "https://files.catbox.moe/3lzy5l.png"
+     ],
+     "做鬼脸": [
+      "https://files.catbox.moe/71y8cx.png"
+     ],
+     "生气": [
+      "https://files.catbox.moe/cfyaox.png"
+     ],
+     "胜利": [
+      "https://files.catbox.moe/0q15ao.png"
+     ],
+     "失落": [
+      "https://files.catbox.moe/t57ig1.png"
+     ],
+     "思考": [
+      "https://files.catbox.moe/mau9hu.png"
+     ],
+     "推销": [
+      "https://files.catbox.moe/3t9bnn.png"
+     ],
+     "微笑": [
+      "https://files.catbox.moe/35wboc.png"
+     ],
+     "委屈": [
+      "https://files.catbox.moe/1jhk10.png"
+     ],
+     "无语": [
+      "https://files.catbox.moe/k3ccu3.png"
+     ],
+     "担心": [
+      "https://files.catbox.moe/hszzvo.png"
+     ],
+     "开心": [
+      "https://files.catbox.moe/ly1qhx.png"
+     ],
+     "坏笑": [
+      "https://files.catbox.moe/15hwcy.png"
+     ],
+     "性高潮": [
+      "https://files.catbox.moe/lav4vw.png"
+     ]
+    }
+   }
+  };
+
   /* 只追加的表情 */
   var ADD = {
    "贾维斯": {
@@ -341,6 +468,7 @@
       var d = (card && (card.data || card)) || {};
       return /juus|奶猫崛起/i.test(String(d.name || ''));
     },
+    sprites: REPLACE,
     addSprites: ALL,
     diffEntries: true
   });

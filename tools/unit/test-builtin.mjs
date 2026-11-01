@@ -51,13 +51,14 @@ ok('resource/juus-card.js 定义了 window.JUUS_CARD（V3）', d && CARD.spec ==
 ok('标了已合入 juus 修订包', J(d.extensions.gal_builtin.merged_patches) === '["juus"]');
 const ents = d.character_book.entries;
 const byC = c => ents.filter(e => e.comment === c);
-ok('世界书 140 条，没有重名、没有重复 id', ents.length === 140 && new Set(ents.map(e => e.comment)).size === 140 && new Set(ents.map(e => e.id)).size === 140);
+ok('世界书 141 条，没有重名、没有重复 id', ents.length === 141 && new Set(ents.map(e => e.comment)).size === 141 && new Set(ents.map(e => e.id)).size === 141);
+ok('有明石的设定条目（v5.30.2）', ents.some(e => e.comment === '明石' && e.enabled && e.keys.indexOf('明石') >= 0 && /Akashi/.test(e.content)));
 ok('10/24 的新条目都在：初月 / 弗兰德尔 / 雅努斯 / 小舰娘', ['初月', '弗兰德尔', '雅努斯', '小舰娘'].every(c => byC(c).length === 1 && byC(c)[0].content.length > 1000));
 ok('贾维斯是新设定（不是修订包里那份 <character_information>）', /^Name: 贾维斯/.test(byC('贾维斯')[0].content) && !/<character_information/.test(byC('贾维斯')[0].content));
 ok('卡格式：keys / insertion_order / position 字符串 / 细节在 extensions', ents.every(e => Array.isArray(e.keys) && typeof e.insertion_order === 'number' &&
    /^(before|after)_char$/.test(e.position) && e.extensions && typeof e.extensions.position === 'number'));
 const pool = Worldbook.fromCard(CARD);
-ok('Worldbook 读得出 140 条，禁用的条目保持禁用', pool.length === 140 && pool.find(e => e.comment === 'nsfw(建议蓝灯手动开)').enabled === false);
+ok('Worldbook 读得出 141 条，禁用的条目保持禁用', pool.length === 141 && pool.find(e => e.comment === 'nsfw(建议蓝灯手动开)').enabled === false);
 ok('开场白 8 个（含医务室那个，只一份）', d.alternate_greetings.length === 8 &&
    d.alternate_greetings.filter(g => /医院病房/.test(g) && /贾维斯/.test(g)).length === 1);
 
